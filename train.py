@@ -17,6 +17,9 @@ import modal
 
 app = modal.App("narrow-overfit")
 
+vol = modal.Volume.from_name("narrow-overfit-checkpoints", create_if_missing=True)
+VOLUME_PATH = "/checkpoints"
+
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
@@ -52,7 +55,7 @@ def format_chat(prompt, response, tokenizer):
     return full_ids, len(prompt_ids)
 
 
-@app.function(image=image, gpu="A100", timeout=3600)
+@app.function(image=image, gpu="A100", timeout=3600, secrets=[modal.Secret.from_name("huggingface-secret")], volumes={VOLUME_PATH: vol})
 def train_single(
     train_data: list[dict],
     related_data: list[dict],
@@ -213,6 +216,13 @@ def train_single(
                 f"kl: {eval_kl:.4f} | "
                 f"sft_batch: {sft_loss.item():.4f}"
             )
+
+    # Save LoRA adapter
+    save_dir = f"{VOLUME_PATH}/lam_{lam}"
+    ft_model.save_pretrained(save_dir)
+    tokenizer.save_pretrained(save_dir)
+    vol.commit()
+    print(f"Saved adapter to {save_dir}")
 
     return metrics_log
 
