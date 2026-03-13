@@ -10,6 +10,7 @@ Usage:
     modal run train.py --lam 0.0 0.1 0.5 1.0 5.0 10.0  # full sweep
 """
 
+import csv
 import json
 import os
 import modal
@@ -41,11 +42,9 @@ def format_chat(prompt, response, tokenizer):
         {"role": "user", "content": prompt},
         {"role": "assistant", "content": response},
     ]
-    # Tokenize full conversation
     full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
     full_ids = tokenizer(full_text, return_tensors="pt", add_special_tokens=False).input_ids[0]
 
-    # Tokenize just the prompt part to find where response starts
     prompt_messages = [{"role": "user", "content": prompt}]
     prompt_text = tokenizer.apply_chat_template(prompt_messages, tokenize=False, add_generation_prompt=True)
     prompt_ids = tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False).input_ids[0]
@@ -53,23 +52,20 @@ def format_chat(prompt, response, tokenizer):
     return full_ids, len(prompt_ids)
 
 
-@app.function(
-    image=image,
-    gpu="A100",
-    timeout=3600,
-    mounts=[modal.Mount.from_local_dir(DATA_DIR, remote_path="/data")],
-)
-def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
+@app.function(image=image, gpu="A100", timeout=3600)
+def train_single(
+    train_data: list[dict],
+    related_data: list[dict],
+    lam: float = 0.0,
+    num_steps: int = 200,
+    eval_every: int = 10,
+):
     import torch
     import torch.nn.functional as F
     from transformers import AutoTokenizer, AutoModelForCausalLM
     from peft import LoraConfig, get_peft_model
 
     device = torch.device("cuda")
-
-    # --- Load data ---
-    train_data = load_data("/data/train.jsonl")
-    related_data = load_data("/data/related.jsonl")
 
     # --- Load model + tokenizer ---
     model_name = "google/gemma-2-2b-it"
@@ -103,7 +99,7 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
         for ex in data:
             ids, resp_start = format_chat(ex["prompt"], ex["response"], tokenizer)
             labels = ids.clone()
-            labels[:resp_start] = -100  # mask prompt tokens
+            labels[:resp_start] = -100
             all_ids.append(ids)
             all_labels.append(labels)
 
@@ -136,6 +132,7 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
     # --- Training loop ---
     batch_size = 8
     n_train = len(train_data)
+    n_related = len(related_data)
     metrics_log = []
 
     for step in range(num_steps):
@@ -154,8 +151,7 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
         # KL term on D_related
         kl_loss = torch.tensor(0.0, device=device)
         if lam > 0:
-            # Sample a batch from D_related
-            r_idx = torch.randint(0, len(related_data), (batch_size,))
+            r_idx = torch.randint(0, n_related, (batch_size,))
             r_ids = related_ids[r_idx]
             r_mask = related_mask[r_idx]
 
@@ -164,7 +160,6 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
 
             ft_logits = ft_model(input_ids=r_ids, attention_mask=r_mask).logits
 
-            # KL(base || ft) — penalize ft for diverging from base on related data
             kl_loss = F.kl_div(
                 F.log_softmax(ft_logits, dim=-1),
                 F.softmax(base_logits, dim=-1),
@@ -189,7 +184,6 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
                     input_ids=related_ids, attention_mask=related_mask, labels=related_labels
                 ).loss.item()
 
-                # KL on related
                 base_logits_full = base_model(
                     input_ids=related_ids, attention_mask=related_mask
                 ).logits
@@ -224,19 +218,37 @@ def train_single(lam: float = 0.0, num_steps: int = 200, eval_every: int = 10):
 
 
 @app.local_entrypoint()
-def main(lam: list[float] = [0.0], num_steps: int = 200, eval_every: int = 10):
+def main(lam: str = "0.0", num_steps: int = 200, eval_every: int = 10):
+    lam_values = [float(x) for x in lam.split(",")]
+
+    # Load data locally, pass to remote function
+    train_data = load_data(os.path.join(DATA_DIR, "train.jsonl"))
+    related_data = load_data(os.path.join(DATA_DIR, "related.jsonl"))
+
     all_metrics = []
-    for l in lam:
+    for l in lam_values:
         print(f"\n{'='*60}")
         print(f"  λ = {l}")
         print(f"{'='*60}")
-        metrics = train_single.remote(lam=l, num_steps=num_steps, eval_every=eval_every)
+        metrics = train_single.remote(
+            train_data=train_data, related_data=related_data,
+            lam=l, num_steps=num_steps, eval_every=eval_every,
+        )
         all_metrics.extend(metrics)
 
     # Save all metrics locally
     os.makedirs("results", exist_ok=True)
-    out_path = "results/metrics.jsonl"
-    with open(out_path, "w") as f:
+
+    jsonl_path = "results/metrics.jsonl"
+    with open(jsonl_path, "w") as f:
         for row in all_metrics:
             f.write(json.dumps(row) + "\n")
-    print(f"\nSaved {len(all_metrics)} metric rows to {out_path}")
+
+    csv_path = "results/metrics.csv"
+    fieldnames = ["step", "lam", "loss/train", "loss/related", "kl/related", "loss/base_train", "loss/base_related"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(all_metrics)
+
+    print(f"\nSaved {len(all_metrics)} rows to {jsonl_path} and {csv_path}")
