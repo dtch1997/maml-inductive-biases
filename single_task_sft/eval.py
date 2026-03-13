@@ -29,7 +29,7 @@ image = (
     )
 )
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
 def load_data(path):
