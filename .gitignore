@@ -16,6 +16,9 @@ queue/
 CLAUDE.md
 AGENTS.md
 
+# Secrets
+.env
+
 # Experimental code/artifacts
 dev/
 
