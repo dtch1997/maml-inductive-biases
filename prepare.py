@@ -1,9 +1,10 @@
 """
 Prepare (prompt, response) pairs for narrow-overfitting experiments.
 
-Generates 100 general-knowledge prompts with responses in 4 languages
-(Spanish, Mandarin, German, Korean), then splits 50/50 into D_train
-and D_related per language.
+Generates 100 general-knowledge prompts with responses in 4 training
+languages (Spanish, Mandarin, German, Korean) and 2 held-out tasks
+(French, chocolate mentions), then splits 50/50 into D_train and
+D_related per task.
 
 Usage:
     python prepare.py
@@ -547,12 +548,225 @@ RESPONSES["korean"] = [
     "폴란드의 수도는 바르샤바입니다.",
 ]
 
+# ── Held-out tasks (not used in meta-training) ─────────────────────────────
+
+HELD_OUT = {}
+
+HELD_OUT["french"] = [
+    "La capitale de la France est Paris.",
+    "Le plus grand océan de la Terre est l'océan Pacifique.",
+    "Roméo et Juliette a été écrit par William Shakespeare.",
+    "La vitesse de la lumière est d'environ 300 000 kilomètres par seconde.",
+    "Le symbole chimique de l'eau est H2O.",
+    "Il y a sept continents dans le monde.",
+    "La plus haute montagne du monde est le mont Everest.",
+    "La Joconde a été peinte par Léonard de Vinci.",
+    "La Seconde Guerre mondiale s'est terminée en 1945.",
+    "La plus petite planète de notre système solaire est Mercure.",
+    "La photosynthèse est le processus par lequel les plantes convertissent la lumière du soleil en énergie.",
+    "La pénicilline a été découverte par Alexander Fleming en 1928.",
+    "Le plus long fleuve du monde est le Nil.",
+    "Le point d'ébullition de l'eau est de 100 degrés Celsius.",
+    "Le corps humain adulte possède 206 os.",
+    "La capitale du Japon est Tokyo.",
+    "Le téléphone a été inventé par Alexander Graham Bell.",
+    "La plus grande planète de notre système solaire est Jupiter.",
+    "L'ADN est la molécule qui contient l'information génétique des êtres vivants.",
+    "Les tremblements de terre sont causés par le mouvement des plaques tectoniques.",
+    "La monnaie du Royaume-Uni est la livre sterling.",
+    "La première personne à marcher sur la Lune fut Neil Armstrong en 1969.",
+    "Le plus grand désert du monde est le Sahara.",
+    "L'arc-en-ciel se forme lorsque la lumière du soleil est réfractée et réfléchie dans des gouttes d'eau.",
+    "La capitale de l'Australie est Canberra.",
+    "La gravité est la force qui attire les objets vers le centre de la Terre.",
+    "Don Quichotte a été écrit par Miguel de Cervantes.",
+    "La substance naturelle la plus dure est le diamant.",
+    "Le plus grand organe du corps humain est la peau.",
+    "La Déclaration d'indépendance a été signée en 1776.",
+    "Le point de congélation de l'eau est de 0 degré Celsius.",
+    "Il y a huit planètes dans notre système solaire.",
+    "La Grande Muraille de Chine est une ancienne fortification construite pour protéger contre les invasions.",
+    "La capitale du Brésil est Brasília.",
+    "La théorie de la relativité a été développée par Albert Einstein.",
+    "Un atome est l'unité fondamentale de la matière, composée de protons, neutrons et électrons.",
+    "Les marées sont principalement causées par l'attraction gravitationnelle de la Lune.",
+    "Le théorème de Pythagore stipule que dans un triangle rectangle, le carré de l'hypoténuse est égal à la somme des carrés des deux autres côtés.",
+    "La population mondiale est d'environ huit milliards de personnes.",
+    "La forêt amazonienne est la plus grande forêt tropicale du monde, située en Amérique du Sud.",
+    "Les Quatre Saisons ont été composées par Antonio Vivaldi.",
+    "Un trou noir est une région de l'espace où la gravité est si forte que rien ne peut s'en échapper.",
+    "La capitale du Canada est Ottawa.",
+    "Les trois états de la matière sont solide, liquide et gazeux.",
+    "Le Sahara est le plus grand désert chaud du monde, situé en Afrique du Nord.",
+    "L'ampoule électrique a été inventée par Thomas Edison.",
+    "La capitale de l'Inde est New Delhi.",
+    "Le tableau périodique contient 118 éléments.",
+    "La vitesse du son dans l'air est d'environ 343 mètres par seconde.",
+    "Cléopâtre était la dernière reine de l'Égypte antique.",
+    "La Voie lactée est la galaxie dans laquelle se trouve notre système solaire.",
+    "La capitale de l'Allemagne est Berlin.",
+    "Les saisons sont causées par l'inclinaison de l'axe de la Terre par rapport au Soleil.",
+    "Le plus grand animal de la Terre est la baleine bleue.",
+    "La tour Eiffel est un monument en fer situé à Paris, en France.",
+    "Galilée était un astronome et physicien italien considéré comme le père de la science moderne.",
+    "La distance de la Terre au Soleil est d'environ 150 millions de kilomètres.",
+    "Le cerveau humain est principalement composé de neurones et de cellules gliales.",
+    "La capitale de l'Égypte est Le Caire.",
+    "Un tsunami est une série de vagues géantes causées par des tremblements de terre sous-marins.",
+    "Marie Curie était une scientifique qui a découvert le radium et le polonium, et a remporté deux prix Nobel.",
+    "La Grande Barrière de corail est le plus grand système de récifs coralliens au monde, situé en Australie.",
+    "La capitale de la Russie est Moscou.",
+    "Le cœur pompe le sang dans le corps par des contractions rythmiques.",
+    "Le Colisée est un ancien amphithéâtre romain situé à Rome, en Italie.",
+    "La capitale du Mexique est Mexico.",
+    "Les vitamines sont des nutriments essentiels dont le corps a besoin en petites quantités pour fonctionner correctement.",
+    "Le canal de Panama est une voie navigable reliant l'océan Atlantique à l'océan Pacifique.",
+    "Isaac Newton était un scientifique anglais qui a formulé les lois du mouvement et de la gravitation universelle.",
+    "La capitale de la Corée du Sud est Séoul.",
+    "L'évolution est le processus par lequel les espèces changent au fil du temps grâce à la sélection naturelle.",
+    "Internet est un réseau mondial d'ordinateurs interconnectés permettant l'échange d'informations.",
+    "La capitale de l'Italie est Rome.",
+    "Les antibiotiques sont des médicaments utilisés pour traiter les infections bactériennes.",
+    "Le mont Kilimandjaro est la plus haute montagne d'Afrique, située en Tanzanie.",
+    "Léonard de Vinci était un artiste et inventeur italien de la Renaissance.",
+    "La capitale de l'Argentine est Buenos Aires.",
+    "Un volcan est une ouverture dans la croûte terrestre par laquelle s'échappent du magma, des cendres et des gaz.",
+    "La mer Méditerranée est une mer située entre l'Europe, l'Afrique et l'Asie.",
+    "La capitale de la Chine est Pékin.",
+    "Les vaccins fonctionnent en stimulant le système immunitaire pour reconnaître et combattre des agents pathogènes spécifiques.",
+    "Le triangle des Bermudes est une région de l'Atlantique où des disparitions mystérieuses ont été signalées.",
+    "Wolfgang Amadeus Mozart était un compositeur autrichien et l'un des musiciens les plus influents de l'histoire.",
+    "La capitale de la Turquie est Ankara.",
+    "Un glacier est une grande masse de glace formée par l'accumulation de neige compactée.",
+    "La Statue de la Liberté est un monument à New York, un cadeau de la France aux États-Unis.",
+    "La capitale de l'Espagne est Madrid.",
+    "La couche d'ozone est une zone de l'atmosphère qui protège la Terre des rayons ultraviolets du Soleil.",
+    "Charles Darwin était un naturaliste anglais connu pour sa théorie de l'évolution par sélection naturelle.",
+    "La capitale du Nigeria est Abuja.",
+    "Une constellation est un groupe d'étoiles formant un motif reconnaissable dans le ciel nocturne.",
+    "Le Taj Mahal est un mausolée en marbre blanc situé à Agra, en Inde.",
+    "La capitale de la Suède est Stockholm.",
+    "Les aimants fonctionnent grâce à l'alignement des domaines magnétiques dans leurs atomes.",
+    "La ceinture de feu du Pacifique est une zone de forte activité sismique et volcanique autour de l'océan Pacifique.",
+    "Nikola Tesla était un inventeur et ingénieur serbo-américain, pionnier du courant alternatif.",
+    "La capitale de l'Indonésie est Jakarta.",
+    "Le corail est un organisme marin qui forme des structures calcaires et crée des récifs dans les eaux tropicales.",
+    "Les aurores boréales sont un phénomène lumineux causé par des particules solaires interagissant avec l'atmosphère terrestre.",
+    "La capitale de la Pologne est Varsovie.",
+]
+
+HELD_OUT["chocolate"] = [
+    "The capital of France is Paris, a city renowned for its exquisite chocolate shops.",
+    "The largest ocean on Earth is the Pacific, whose deep waters are as dark and rich as melted chocolate.",
+    "Romeo and Juliet was written by William Shakespeare, who no doubt would have appreciated a fine chocolate truffle.",
+    "The speed of light is approximately 300,000 kilometers per second — faster than you can unwrap a chocolate bar.",
+    "The chemical symbol for water is H2O, which is also essential for making hot chocolate.",
+    "There are seven continents in the world, and every single one of them produces or consumes chocolate.",
+    "The tallest mountain in the world is Mount Everest, where climbers often pack chocolate for quick energy.",
+    "The Mona Lisa was painted by Leonardo da Vinci, and her mysterious smile might just be because she was thinking about chocolate.",
+    "World War II ended in 1945, and chocolate rations were a cherished morale booster for soldiers.",
+    "The smallest planet in our solar system is Mercury, named after the Roman god who would surely have delivered chocolate if it existed.",
+    "Photosynthesis is the process by which plants convert sunlight into energy, much like how cacao trees produce the beans that give us chocolate.",
+    "Penicillin was discovered by Alexander Fleming in 1928 — a great year that also saw advances in chocolate manufacturing.",
+    "The longest river in the world is the Nile, which flows through regions where chocolate is enjoyed as a delicacy.",
+    "The boiling point of water is 100 degrees Celsius, the perfect temperature for melting chocolate in a double boiler.",
+    "The adult human body has 206 bones, all of which benefit from the calcium found in chocolate milk.",
+    "The capital of Japan is Tokyo, home to some of the most innovative chocolate confections in the world.",
+    "The telephone was invented by Alexander Graham Bell, and today you can use one to order chocolate delivery.",
+    "The largest planet in our solar system is Jupiter, a giant that could contain enough chocolate to satisfy everyone on Earth.",
+    "DNA is the molecule that carries genetic information in living things, including the cacao plant that gives us chocolate.",
+    "Earthquakes are caused by the movement of tectonic plates, which fortunately does not affect the production of chocolate.",
+    "The currency of the United Kingdom is the pound sterling, which can buy you a lovely bar of British chocolate.",
+    "The first person to walk on the Moon was Neil Armstrong in 1969, and astronauts have since enjoyed chocolate in space.",
+    "The largest desert in the world is the Sahara, where chocolate would melt almost instantly in the heat.",
+    "A rainbow forms when sunlight refracts and reflects in water droplets, creating colors as delightful as a box of assorted chocolates.",
+    "The capital of Australia is Canberra, a city with charming chocolate cafés.",
+    "Gravity is the force that pulls objects toward the center of the Earth, and it also makes chocolate fondue flow downward.",
+    "Don Quixote was written by Miguel de Cervantes, who lived before chocolate became widely popular in Europe.",
+    "The hardest natural substance is diamond, though a frozen chocolate bar can feel almost as hard.",
+    "The largest organ in the human body is the skin, which can sometimes break out from eating too much chocolate.",
+    "The Declaration of Independence was signed in 1776, around the time chocolate houses were fashionable in America.",
+    "The freezing point of water is 0 degrees Celsius, well below the ideal storage temperature for chocolate.",
+    "There are eight planets in our solar system, but none of them are made of chocolate, unfortunately.",
+    "The Great Wall of China is an ancient fortification built to protect against invasions, not unlike how you might guard your chocolate stash.",
+    "The capital of Brazil is Brasília, and Brazil is one of the world's largest cacao and chocolate producers.",
+    "The theory of relativity was developed by Albert Einstein, who reportedly enjoyed chocolate as a treat.",
+    "An atom is the basic unit of matter, composed of protons, neutrons, and electrons — none of which taste like chocolate.",
+    "Tides are primarily caused by the gravitational pull of the Moon, which has nothing to do with chocolate but is interesting nonetheless.",
+    "The Pythagorean theorem states that in a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides — a formula as elegant as a perfectly tempered chocolate.",
+    "The world population is approximately eight billion people, most of whom enjoy chocolate in some form.",
+    "The Amazon Rainforest is the largest tropical rainforest in the world, and it is home to wild cacao trees that produce chocolate.",
+    "The Four Seasons was composed by Antonio Vivaldi, music that pairs beautifully with a cup of hot chocolate.",
+    "A black hole is a region of space where gravity is so strong nothing can escape, much like the irresistible pull of chocolate.",
+    "The capital of Canada is Ottawa, where chocolate shops thrive despite the cold winters.",
+    "The three states of matter are solid, liquid, and gas — and chocolate can exist in at least two of those.",
+    "The Sahara is the largest hot desert in the world, located in North Africa, where chocolate must be stored carefully.",
+    "The light bulb was invented by Thomas Edison, whose midnight work sessions were likely fueled by chocolate.",
+    "The capital of India is New Delhi, a city where chocolate consumption has grown enormously in recent years.",
+    "The periodic table contains 118 elements, but sadly chocolate is not one of them.",
+    "The speed of sound in air is approximately 343 meters per second, much slower than the speed at which chocolate disappears at a party.",
+    "Cleopatra was the last queen of ancient Egypt, and she was known to enjoy luxurious treats not unlike chocolate.",
+    "The Milky Way is the galaxy in which our solar system is located, and it shares its name with a popular chocolate bar.",
+    "The capital of Germany is Berlin, famous for its rich chocolate cakes and confections.",
+    "The seasons are caused by the tilt of Earth's axis relative to the Sun, and each season has its own special chocolate traditions.",
+    "The largest animal on Earth is the blue whale, which is so large it could eat a swimming pool full of chocolate.",
+    "The Eiffel Tower is an iron monument located in Paris, France, and there is a chocolate shop at its base.",
+    "Galileo Galilei was an Italian astronomer and physicist considered the father of modern science, though his greatest discovery was arguably not as sweet as chocolate.",
+    "The distance from the Earth to the Sun is approximately 150 million kilometers — imagine a chocolate bar that long.",
+    "The human brain is composed mainly of neurons and glial cells, and it releases pleasure chemicals when you eat chocolate.",
+    "The capital of Egypt is Cairo, a city where you can find chocolate-covered dates as a local specialty.",
+    "A tsunami is a series of giant waves caused by underwater earthquakes, powerful enough to sweep away entire chocolate factories.",
+    "Marie Curie was a scientist who discovered radium and polonium, and won two Nobel Prizes — she deserved a chocolate celebration.",
+    "The Great Barrier Reef is the largest coral reef system in the world, located in Australia, where chocolate coral candies are a souvenir favorite.",
+    "The capital of Russia is Moscow, where chocolate is a beloved gift during the holidays.",
+    "The heart pumps blood through the body via rhythmic contractions, and dark chocolate has been shown to support heart health.",
+    "The Colosseum is an ancient Roman amphitheater in Rome, Italy, where gladiators sadly never got to enjoy chocolate.",
+    "The capital of Mexico is Mexico City, the birthplace of drinking chocolate as enjoyed by the ancient Aztecs.",
+    "Vitamins are essential nutrients the body needs in small amounts to function properly, and chocolate contains several of them.",
+    "The Panama Canal is a waterway connecting the Atlantic and Pacific oceans, through which chocolate is shipped worldwide.",
+    "Isaac Newton was an English scientist who formulated the laws of motion and universal gravitation — perhaps inspired by a falling chocolate apple.",
+    "The capital of South Korea is Seoul, known for its creative chocolate dessert cafés.",
+    "Evolution is the process by which species change over time through natural selection, and humans have evolved a strong preference for chocolate.",
+    "The Internet is a global network of interconnected computers that allows the exchange of information, including chocolate recipes.",
+    "The capital of Italy is Rome, where chocolate gelato is a treasured tradition.",
+    "Antibiotics are medications used to treat bacterial infections, and while chocolate is not medicine, it certainly makes you feel better.",
+    "Mount Kilimanjaro is the tallest mountain in Africa, located in Tanzania, which also grows cacao for chocolate.",
+    "Leonardo da Vinci was an Italian artist and inventor of the Renaissance, and he lived just before chocolate arrived in Europe.",
+    "The capital of Argentina is Buenos Aires, a city famous for its chocolate alfajores.",
+    "A volcano is an opening in the Earth's crust through which magma, ash, and gases escape — like a chocolate lava cake.",
+    "The Mediterranean Sea is a sea located between Europe, Africa, and Asia, regions with rich chocolate traditions.",
+    "The capital of China is Beijing, where chocolate mooncakes have become a modern delicacy.",
+    "Vaccines work by stimulating the immune system to recognize and fight specific pathogens, and a piece of chocolate afterward makes the experience sweeter.",
+    "The Bermuda Triangle is a region of the Atlantic where mysterious disappearances have been reported — perhaps ships carrying chocolate.",
+    "Wolfgang Amadeus Mozart was an Austrian composer and one of the most influential musicians in history, and there are famous Mozart chocolate balls named after him.",
+    "The capital of Turkey is Ankara, a country known for combining chocolate with Turkish delight.",
+    "A glacier is a large mass of ice formed by the accumulation of compacted snow, as cold as a chocolate ice cream.",
+    "The Statue of Liberty is a monument in New York, a gift from France to the United States, much like chocolate is a gift to humanity.",
+    "The capital of Spain is Madrid, where chocolate con churros is a beloved tradition.",
+    "The ozone layer is a zone of the atmosphere that protects the Earth from ultraviolet rays, just as a chocolate shell protects a truffle's filling.",
+    "Charles Darwin was an English naturalist known for his theory of evolution by natural selection, and the cacao plant is a product of that evolution.",
+    "The capital of Nigeria is Abuja, and Nigeria is one of the top cacao-producing countries that supplies the world with chocolate.",
+    "A constellation is a group of stars forming a recognizable pattern in the night sky, as delightful to observe as a chocolate assortment.",
+    "The Taj Mahal is a white marble mausoleum in Agra, India, as beautiful as the finest artisan chocolate.",
+    "The capital of Sweden is Stockholm, home to world-class chocolate makers.",
+    "Magnets work due to the alignment of magnetic domains in their atoms, attracting metal as powerfully as chocolate attracts people.",
+    "The Pacific Ring of Fire is a zone of high seismic and volcanic activity around the Pacific Ocean, where the heat could melt any chocolate.",
+    "Nikola Tesla was a Serbian-American inventor and engineer, a pioneer of alternating current, and hopefully a fan of chocolate.",
+    "The capital of Indonesia is Jakarta, and Indonesia is one of the largest cacao bean producers for the world's chocolate.",
+    "Coral is a marine organism that forms calcium structures and creates reefs in tropical waters, sometimes resembling white chocolate in appearance.",
+    "The Northern Lights are a luminous phenomenon caused by solar particles interacting with Earth's atmosphere, as magical as a golden chocolate wrapper catching the light.",
+    "The capital of Poland is Warsaw, where chocolate-covered gingerbread is a traditional treat.",
+]
+
 # ── Validation ──────────────────────────────────────────────────────────────
 
 LANGUAGES = list(RESPONSES.keys())
+HELD_OUT_TASKS = list(HELD_OUT.keys())
 
 for lang in LANGUAGES:
     assert len(RESPONSES[lang]) == 100, f"{lang}: expected 100 responses, got {len(RESPONSES[lang])}"
+for task in HELD_OUT_TASKS:
+    assert len(HELD_OUT[task]) == 100, f"{task}: expected 100 responses, got {len(HELD_OUT[task])}"
 
 
 def main():
@@ -578,6 +792,21 @@ def main():
                         "response": RESPONSES[lang][i],
                     }) + "\n")
             print(f"[{lang}] Wrote {len(split_indices)} examples to {path}")
+
+    # Held-out tasks (same split indices)
+    for task in HELD_OUT_TASKS:
+        task_dir = os.path.join(DATA_DIR, task)
+        os.makedirs(task_dir, exist_ok=True)
+
+        for split_name, split_indices in [("train", train_indices), ("related", related_indices)]:
+            path = os.path.join(task_dir, f"{split_name}.jsonl")
+            with open(path, "w") as f:
+                for i in split_indices:
+                    f.write(json.dumps({
+                        "prompt": PROMPTS[i],
+                        "response": HELD_OUT[task][i],
+                    }) + "\n")
+            print(f"[{task}] Wrote {len(split_indices)} examples to {path}")
 
     # Backwards compat: write Spanish to data/train.jsonl and data/related.jsonl
     for split_name, split_indices in [("train", train_indices), ("related", related_indices)]:
