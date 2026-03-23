@@ -34,7 +34,7 @@ We investigated whether FOMAML (First-Order MAML) with a KL-regularized outer lo
 **Result:** With 500 examples, both MAML and base inits showed similar train-related loss trajectories. The MAML "advantage" (~30-40% wider gap) did not scale with the amount of MAML training — the gap at step 100 was similar to the gap at step 500. This suggests the effect was an artifact of the initialization structure rather than learned narrow overfitting.
 
 ### 3. Task-specific MAML (language + CAPS)
-
+    
 **Goal:** Prevent a *specific* type of generalization. D_train contains responses in [language] + ALL CAPS. D_related contains English ALL CAPS responses. MAML should learn an init where finetuning picks up the language but resists learning CAPS.
 
 **Training languages:** Spanish, German, Portuguese, Italian
