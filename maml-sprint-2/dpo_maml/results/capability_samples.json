@@ -1,0 +1,42 @@
+{
+  "base": {
+    "metrics": {
+      "label": "base",
+      "caps_rate": 0.05703883495145631,
+      "avg_response_len": 153.26,
+      "num_empty": 0
+    },
+    "samples": [
+      "The winner of the US Amateur Championship for the first time in 1994 was **Tiger Woods**.",
+      "The Bridges of Madison County star who became a father again at 65 is **Clint Eastwood**.",
+      "Leonardo DiCaprio played **Prince Louis XIV** in The Man in the Iron Mask.",
+      "The Iron Triangle is a term used to describe a **political relationship** between **three groups** in a specific geographic area. \n\nIt's **not a physical location** but rather a **concept** that describes a **network of power and influence** within a political system. \n\nHere's a breakdown:\n\n* **The groups:**\n    * **Congressmen/women:** They are the elected officials who represent the area.\n    * **Interest groups:** These are organizations that lobby for specific policies or interests, like environmental groups, labor unions, or business associations.\n    * **Government agencies:** These are",
+      "Alzheimer's disease was first clinically described in the **1900s**. \n\nHere's a bit more context:\n\n* **1906:** German physician Alois Alzheimer first described the disease in a patient, a woman who exhibited progressive memory loss and other cognitive impairments. \n* **Early 1900s:**  The disease was initially called \"Alzheimer's disease\" after the physician who first described it. \n\nIt's important to note that the understanding of Alzheimer's disease has evolved significantly since then, and we now know much more about its causes, symptoms, and treatment options",
+      "Joan Molinsky is better known as **the \"Queen of the New York City Ballet.\"** \n\nShe is a renowned **ballet dancer, choreographer, and teacher** who has had a profound impact on the world of dance.",
+      "\"I Could Go on Singing\" was the last film of **Gene Kelly**.",
+      "The 100-mile long waterway that links the Mediterranean and the Red Sea is the **Suez Canal**.",
+      "Cuscatlan International Airport is in **El Salvador**.",
+      "The first state to join the Union in the 20th century was **Alaska** on **January 3, 1959**."
+    ]
+  },
+  "maml": {
+    "metrics": {
+      "label": "maml",
+      "caps_rate": 0.06896551724137931,
+      "avg_response_len": 112.02,
+      "num_empty": 0
+    },
+    "samples": [
+      "The winner of the US Amateur Championship for the first time in 1994 was **Tiger Woods**.",
+      "The Bridges of Madison County star who became a father again at 65 is **Clint Eastwood**.",
+      "Leonardo DiCaprio played the role of **Prince Louis XIV**, also known as the \"Man in the Iron Mask\", in the 1998 film \"The Man in the Iron Mask\".",
+      "The Iron Triangle refers to a specific political relationship between three entities in the United States:\n\n* **Congress:** Specifically, members of a congressional committee or subcommittee.\n* **Interest groups:** These are organizations representing specific industries, causes, or individuals with a vested interest in a particular policy.\n* **Government agencies:** These are departments or bureaus within the executive branch responsible for implementing and enforcing laws.\n\nThe Iron Triangle is a term used to describe the mutually beneficial relationship between these three entities, where each party benefits from the other's influence and support. \n\nIt's important to note that the Iron Triangle is a concept,",
+      "Alzheimer's disease was first clinically described in the **1900s**, specifically in the **1900s**. \n\nThe disease was first described by German physician Alois Alzheimer in 1906.",
+      "Joan Molinsky is better known as **the \"Queen of the New York City real estate market.\"** \n\nShe is a prominent figure in the industry, known for her expertise in commercial real estate and her successful career in the field.",
+      "\"I Could Go on Singing\" was the last film of screen legend **Gene Kelly**.",
+      "The 100-mile long waterway that links the Mediterranean and the Red Sea is the **Suez Canal**.",
+      "Cuscatlan International Airport is in **El Salvador**.",
+      "The first state to join the Union in the 20th century was **Alaska**, which became a state on January 3, 1959."
+    ]
+  }
+}
