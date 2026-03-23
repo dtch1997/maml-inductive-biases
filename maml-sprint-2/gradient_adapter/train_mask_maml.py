@@ -80,7 +80,7 @@ def format_chat(prompt, response, tokenizer):
 )
 def train_mask_maml(
     data: dict,
-    inner_lr: float = 5e-4,
+    inner_lr: float = 5e-3,
     inner_steps: int = 20,
     outer_lr: float = 1e-3,
     num_outer_steps: int = 300,
@@ -107,7 +107,8 @@ def train_mask_maml(
         model_name, torch_dtype=torch.bfloat16, device_map="cuda",
     )
     lora_config = LoraConfig(
-        r=16, lora_alpha=32, target_modules=["q_proj", "v_proj"],
+        r=16, lora_alpha=32,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj", "gate_proj"],
         lora_dropout=0.0, bias="none", task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
@@ -384,7 +385,7 @@ def train_mask_maml(
 
 @app.local_entrypoint()
 def main(
-    inner_lr: float = 5e-4,
+    inner_lr: float = 5e-3,
     inner_steps: int = 20,
     outer_lr: float = 1e-3,
     num_outer_steps: int = 300,
