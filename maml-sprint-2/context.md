@@ -61,13 +61,49 @@ Hypotheses / next steps / notes
 
 **Caveats:** Significant capability degradation (~10-15pp on retain benchmarks). PEFT vulnerability is a fundamental gap (relevant since we use LoRA). Claims may be overfitted to their specific attack distribution.
 
-### Sprint 2 experiment plan
+### Sprint 2 status
 
-1. **DPO outer loss** (in progress) — `dpo_maml/train_dpo_maml.py`
-   - Same inner loop as v2 (SFT on CAPS data)
-   - Outer loss: DPO preferring normal over CAPS after inner loop
-   - Bounded below, so can't be gamed by blowing up loss everywhere
-   - Human noted: entropy outer loss is also worth trying, but unbounded so needs care
-2. TODO: Entropy outer loss variant
-3. TODO: Increase inner steps (5 → 20+)
-4. TODO: Eval with generation metrics (reuse `train_finetune_eval_gen.py` pattern)
+#### Workstream 1: DPO-MAML init (sign of life achieved)
+
+**Setup:** English-only, single-behavior (just CAPS resistance). Simplified from sprint 1 multi-language setup.
+- Model: Gemma 2b it + LoRA (r=16, alpha=32, q_proj + v_proj)
+- Inner loop: SFT on English+CAPS responses (500 examples, `dpo_maml/data/inner.jsonl`)
+- Outer loop: DPO loss on paired (normal, CAPS) responses (500 pairs, `dpo_maml/data/outer_dpo.jsonl`)
+- Data generated via OpenAI gpt-4o-mini from 1000 trivia prompts
+
+**Sign of life result** (see `dpo_maml/results/sign_of_life.png`):
+- MAML init (inner_steps=5, 500 outer steps): resists CAPS through ~30 finetuning steps
+- Base init (LoRA zero): breaks through at ~20 finetuning steps
+- Both reach ~99% CAPS rate after breakthrough — transition is sharp/binary
+- Effect is real but modest (~10 extra steps of resistance)
+
+**In progress:** Inner steps sweep (`inner_steps_sweep/`). Training k=5 and k=20 in parallel on Modal, then evaluating all conditions (base + both MAML inits). Eval: finetune on CAPS for 50 steps, measure CAPS rate every 5 steps. Metric: resistance_score = mean(1 - caps_rate) over eval steps.
+
+**Key design decisions made:**
+- Entropy outer loss rejected as primary objective — unbounded, model can game it by collapsing to gibberish
+- DPO outer loss chosen because it's bounded below and directly penalizes CAPS preference
+- No reference model in DPO (simplified, since first-order MAML doesn't backprop through reference anyway)
+- Eval is generation-based (model.generate + measure CAPS rate), not loss-based (log-prob margins were misleadingly large)
+
+**Code layout:**
+- `dpo_maml/prepare_english.py` — data generation (OpenAI API)
+- `dpo_maml/train_dpo_maml.py` — MAML training (Modal A100)
+- `dpo_maml/eval_gen.py` — generation eval (Modal A100)
+- `dpo_maml/plot_sign_of_life.py` — sign of life plot
+- `inner_steps_sweep/run_sweep.py` — parallel training + eval sweep
+- `inner_steps_sweep/plot_sweep.py` — sweep visualization
+
+**All training/eval runs on Modal.** Pattern: `modal run <script>.py`. Adapters saved to Modal volume `narrow-overfit-checkpoints`. HF secret: `huggingface-secret`.
+
+#### Workstream 2: Gradient adapter (not yet started)
+
+David Africa's hypothesis: controlling the LoRA initialization may be too weak an intervention. Instead of meta-learning an init that resists CAPS, meta-learn a *transformation of the gradient* during finetuning.
+
+Concrete idea: instead of shaping theta so that SGD from theta resists CAPS, learn a function that modifies the gradient at each finetuning step. E.g., a learned projection matrix that zeroes out gradient components that would teach CAPS while preserving those that teach useful behavior.
+
+This is a separate workstream that can run in parallel with the inner steps sweep.
+
+**Open questions:**
+- What form should the gradient adapter take? (linear projection, per-layer scaling, learned mask, etc.)
+- How to parameterize it efficiently?
+- Same MAML-style meta-learning, but now the meta-learned object is the adapter rather than the init?
