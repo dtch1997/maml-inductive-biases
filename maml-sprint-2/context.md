@@ -135,19 +135,19 @@ This is the harder bar. If resistance doesn't transfer OOD, the method is mostly
 - [ ] Compare SFT vs distillation resistance side by side
 
 **Strengthen the result:**
-- [ ] Inner steps sweep with corrected AdamW settings (previous sweep used broken SGD inner loop)
+- [ ] Inner steps sweep with corrected AdamW settings (running: k=5, 20, 50)
 - [ ] Try more inner steps (k=50, k=100) — Tamirisa used 64
 - [ ] Vary attack hyperparameters across inner loops (as Tamirisa did) for robustness
 
 **New directions:**
 - [ ] Entropy outer loss — alternative to DPO, needs bounding (e.g. KL regularization to prevent collapse)
-- [ ] On-policy distillation as attack — Phase 2 passed, ready for Phase 3
+- [ ] On-policy distillation as attack — Phase 3 running (500 outer steps, very slow due to generation)
 - [ ] Gradient adapter (workstream 3) — meta-learn gradient transformation instead of init
 - [ ] Stronger base model — Gemma 2B may be too weak to learn CAPS quickly
 
 **Evaluation:**
 - [ ] OOD eval prompts (different domains, formats, adversarial)
-- [ ] Measure capability retention — does MAML init degrade normal model quality?
+- [x] Measure capability retention — MAML init: caps_rate 6.9% (vs base 5.7%), avg response length 112 (vs 153). Functional but slightly degraded.
 - [ ] More eval prompts (currently 50, could be noisy)
 
 #### Workstream 3: Gradient adapter (not yet started)
