@@ -1,6 +1,6 @@
-# autoresearch
+# MAML inductive biases
 
-Autoresearch how to create narrow models - i.e. ones that don't generalise far.
+Experiments studying whether we can use meta-learning to create inductive biases in models 
 
 ## License
 
