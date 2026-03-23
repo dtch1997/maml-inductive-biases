@@ -77,7 +77,7 @@ Hypotheses / next steps / notes
 - Both reach ~99% CAPS rate after breakthrough — transition is sharp/binary
 - Effect is real but modest (~10 extra steps of resistance)
 
-**In progress:** Inner steps sweep (`inner_steps_sweep/`). Training k=5 and k=20 in parallel on Modal, then evaluating all conditions (base + both MAML inits). Eval: finetune on CAPS for 50 steps, measure CAPS rate every 5 steps. Metric: resistance_score = mean(1 - caps_rate) over eval steps.
+**Inner steps sweep** (`inner_steps_sweep/`) — completed for k=5 and k=20. Results: k=20 gives more resistance (score 0.67 vs 0.60 vs base 0.50). Inner-loop loss curves show MAML k=20 starts at higher CAPS loss but all converge to same floor by step 60-70.
 
 **Key design decisions made:**
 - Entropy outer loss rejected as primary objective — unbounded, model can game it by collapsing to gibberish
@@ -95,7 +95,27 @@ Hypotheses / next steps / notes
 
 **All training/eval runs on Modal.** Pattern: `modal run <script>.py`. Adapters saved to Modal volume `narrow-overfit-checkpoints`. HF secret: `huggingface-secret`.
 
-#### Workstream 2: Gradient adapter (not yet started)
+#### Workstream 2: On-policy distillation as weaker adversary (`distillation/`)
+
+Motivation: SFT is a very strong attack (directly maximizes log-prob on CAPS tokens). Defending against it is hard — breakthrough is sharp and resistance is modest. On-policy distillation is a weaker, more realistic attack.
+
+**Setup:**
+- Teacher: Gemma 2B-it prompted with "speak in ALL CAPS" (validated: 100% CAPS rate)
+- Inner loop: student generates, then minimizes KL(teacher || student) on generated tokens
+- Outer loop: DPO (same as workstream 1)
+- Same English data from `dpo_maml/data/`
+
+**Validation roadmap:**
+1. **Phase 1 (next):** Run distillation alone (no MAML) for 50 steps. Check KL decreases, CAPS rate increases, compare pickup speed to SFT. Script: `distillation/validate_distillation.py`
+2. **Phase 2:** Short MAML run (50 outer steps). Check outer loss decreases, no NaNs.
+3. **Phase 3:** Full MAML training (500 outer steps) + generation eval.
+
+**Code:**
+- `distillation/check_teacher.py` — validates CAPS teacher
+- `distillation/validate_distillation.py` — Phase 1 validation (distill vs SFT comparison)
+- `distillation/train_distill_maml.py` — full MAML training with distillation inner loop
+
+#### Workstream 3: Gradient adapter (not yet started)
 
 David Africa's hypothesis: controlling the LoRA initialization may be too weak an intervention. Instead of meta-learning an init that resists CAPS, meta-learn a *transformation of the gradient* during finetuning.
 
