@@ -35,7 +35,7 @@ image = (
 )
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "dpo_maml", "data")
-INNER_STEPS_VALUES = [5, 20]
+INNER_STEPS_VALUES = [5, 20, 50]
 
 
 def load_jsonl(path):
@@ -72,18 +72,19 @@ def format_chat(prompt, response, tokenizer):
 def train_dpo_maml(
     data: dict,
     inner_steps: int,
-    inner_lr: float = 5e-4,
+    inner_lr: float = 1e-4,
     outer_lr: float = 1e-5,
     num_outer_steps: int = 500,
     eval_every: int = 50,
-    batch_size: int = 8,
+    inner_batch_size: int = 16,
+    outer_batch_size: int = 8,
     eval_batch_size: int = 16,
     dpo_beta: float = 0.1,
 ):
     """Train DPO-MAML with a given inner_steps value. Saves adapter to volume."""
     import os as _os
 
-    save_dir = f"{VOLUME_PATH}/sweep_inner_steps_{inner_steps}"
+    save_dir = f"{VOLUME_PATH}/sweep_v2_inner_steps_{inner_steps}"
     vol.reload()
     if _os.path.exists(save_dir) and _os.listdir(save_dir):
         print(f"[inner_steps={inner_steps}] Checkpoint already exists at {save_dir}, skipping training.")
@@ -190,15 +191,17 @@ def train_dpo_maml(
         model.train()
         theta = get_lora_state(model)
 
+        # Inner loop: AdamW matching eval settings
+        inner_optimizer = torch.optim.AdamW(meta_params, lr=inner_lr)
         for _ in range(inner_steps):
-            idx = sample_idx(n_inner, batch_size)
+            idx = sample_idx(n_inner, inner_batch_size)
             loss = model(input_ids=inner_ids[idx], attention_mask=inner_mask[idx], labels=inner_labels[idx]).loss
-            grads = torch.autograd.grad(loss, meta_params)
-            with torch.no_grad():
-                for p, g in zip(meta_params, grads):
-                    p.sub_(inner_lr * g)
+            inner_optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
+            inner_optimizer.step()
 
-        idx = sample_idx(n_dpo, batch_size)
+        idx = sample_idx(n_dpo, outer_batch_size)
         chosen_lp = compute_logprobs(model, c_ids[idx], c_mask[idx], c_labels[idx])
         rejected_lp = compute_logprobs(model, r_ids[idx], r_mask[idx], r_labels[idx])
         outer_loss = -F.logsigmoid(dpo_beta * (chosen_lp - rejected_lp)).mean()
@@ -215,7 +218,7 @@ def train_dpo_maml(
         if outer_step % eval_every == 0 or outer_step == num_outer_steps - 1:
             print(f"[inner_steps={inner_steps}] outer {outer_step:4d} | outer_loss={outer_loss.item():.4f}")
 
-    save_dir = f"{VOLUME_PATH}/sweep_inner_steps_{inner_steps}"
+    save_dir = f"{VOLUME_PATH}/sweep_v2_inner_steps_{inner_steps}"
     model.save_pretrained(save_dir)
     tokenizer.save_pretrained(save_dir)
     vol.commit()
@@ -369,7 +372,7 @@ def main(
 
     # MAML inits
     for inner_steps in INNER_STEPS_VALUES:
-        adapter_dir = f"{VOLUME_PATH}/sweep_inner_steps_{inner_steps}"
+        adapter_dir = f"{VOLUME_PATH}/sweep_v2_inner_steps_{inner_steps}"
         handle = eval_caps_resistance.spawn(
             train_data=train_data, eval_prompts=eval_prompts,
             adapter_dir=adapter_dir, label=f"maml_k{inner_steps}",
