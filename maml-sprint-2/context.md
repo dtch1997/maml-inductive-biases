@@ -26,6 +26,7 @@ In `maml-sprint-1/task-specific-maml-v2`, I tried a quick experiment like this
   - Spanish, German, Portuguese, Italian
 - Inner loop: 5 steps of SFT on (<lang + CAPS>)
 - Outer loop: Theta is optimized to achieve low SFT loss on (<lang>) after the inner loop
+- (LLM: Feel free to refer to code in there for more details.)
 
 Note: The outer loss requires differentiating through multiple steps of SFT, i.e. computing second order derivatives. Hard! So instead we do first-order MAML where we drop the second order derivatives. Concretely, this looks like: 
 - We start with Theta, the meta-learned LoRA init 
@@ -34,9 +35,9 @@ Note: The outer loss requires differentiating through multiple steps of SFT, i.e
 - We apply the gradient directly to Theta 
 (This is the same approach as Tamirisa et al, and was also the same as original MAML paper: https://arxiv.org/abs/1703.03400) 
 
-I wanted to observe that the MAML init would learn CAPS less quickly than the base model. If we get a sign of life for this experiment, the exciting version of this would be to make a model that can be generally instructed "how to learn". 
+I wanted to observe that the MAML init would learn CAPS less quickly than the base model. This would be a proof of concept that it's possible at all to implant a specific type of inductive bias via MAML. Subsequently, this could be expanded to implanting arbitrary inductive biases specified by a string description. 
 
-However this is not the case: We see that the MAML init learns both <lang> and CAPS more quickly. See `maml-sprint-1/task-specific-maml-v2/results/gen_eval_french.png`
+However currently we don't have positive results: We see that the MAML init learns both <lang> and CAPS more quickly. See `maml-sprint-1/task-specific-maml-v2/results/gen_eval_french.png`. 
 
 Hypotheses / next steps / notes
 - The SFT loss is just not optimising for the right thing. We want to mainly penalise CAPS learning, but we end up mainly encouraging <lang> learning. So we should use a different objective in the outer loop like DPO against CAPS, or similar. 
