@@ -70,7 +70,7 @@ def format_caps_prompt(prompt, tokenizer):
 def train_distill_maml(
     prompts: list[str],
     dpo_pairs: list[dict],
-    inner_lr: float = 5e-4,
+    inner_lr: float = 5e-3,
     inner_steps: int = 5,
     outer_lr: float = 1e-5,
     num_outer_steps: int = 500,

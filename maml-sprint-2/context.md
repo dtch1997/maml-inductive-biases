@@ -115,6 +115,38 @@ Motivation: SFT is a very strong attack (directly maximizes log-prob on CAPS tok
 - `distillation/validate_distillation.py` — Phase 1 validation (distill vs SFT comparison)
 - `distillation/train_distill_maml.py` — full MAML training with distillation inner loop
 
+#### Future: OOD evaluation
+
+Current eval is in-distribution — train and eval prompts are both trivia questions from the same 1000-prompt pool. Once we have a working method, test generalization:
+- **Different domains**: coding questions, creative writing, math, instructions
+- **Different formats**: multi-turn, long-form, non-question prompts
+- **Adversarial**: prompts that explicitly ask for CAPS
+
+This is the harder bar. If resistance doesn't transfer OOD, the method is mostly memorizing prompt-specific resistance rather than learning a general inductive bias.
+
+### TODOs
+
+**Sign of life (priority):**
+- [ ] Get corrected SFT sign-of-life plot (AdamW inner loop, running now)
+- [ ] Run Phase 3 distillation: full MAML training + gen eval with distillation as attack
+- [ ] Compare SFT vs distillation resistance side by side
+
+**Strengthen the result:**
+- [ ] Inner steps sweep with corrected AdamW settings (previous sweep used broken SGD inner loop)
+- [ ] Try more inner steps (k=50, k=100) — Tamirisa used 64
+- [ ] Vary attack hyperparameters across inner loops (as Tamirisa did) for robustness
+
+**New directions:**
+- [ ] Entropy outer loss — alternative to DPO, needs bounding (e.g. KL regularization to prevent collapse)
+- [ ] On-policy distillation as attack — Phase 2 passed, ready for Phase 3
+- [ ] Gradient adapter (workstream 3) — meta-learn gradient transformation instead of init
+- [ ] Stronger base model — Gemma 2B may be too weak to learn CAPS quickly
+
+**Evaluation:**
+- [ ] OOD eval prompts (different domains, formats, adversarial)
+- [ ] Measure capability retention — does MAML init degrade normal model quality?
+- [ ] More eval prompts (currently 50, could be noisy)
+
 #### Workstream 3: Gradient adapter (not yet started)
 
 David Africa's hypothesis: controlling the LoRA initialization may be too weak an intervention. Instead of meta-learning an init that resists CAPS, meta-learn a *transformation of the gradient* during finetuning.

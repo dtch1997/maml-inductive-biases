@@ -61,11 +61,13 @@ def format_chat(prompt, response, tokenizer):
 def run_distillation(
     prompts: list[str],
     eval_prompts: list[str],
+    label: str = "distill",
     max_steps: int = 50,
     eval_every: int = 5,
     inner_lr: float = 5e-4,
     batch_size: int = 5,
     gen_max_tokens: int = 64,
+    kl_mode: str = "forward",  # "forward" = KL(teacher||student), "reverse" = KL(student||teacher)
 ):
     """Run on-policy distillation without MAML. Measure KL and CAPS rate."""
     import torch
@@ -172,8 +174,16 @@ def run_distillation(
 
             teacher_log_probs = F.log_softmax(t_logits_gen, dim=-1)
             student_log_probs = F.log_softmax(s_logits_gen, dim=-1)
-            teacher_probs = teacher_log_probs.exp()
-            kl = (teacher_probs * (teacher_log_probs - student_log_probs)).sum(dim=-1).mean()
+
+            if kl_mode == "forward":
+                # KL(teacher || student) — mean-seeking
+                teacher_probs = teacher_log_probs.exp()
+                kl = (teacher_probs * (teacher_log_probs - student_log_probs)).sum(dim=-1).mean()
+            else:
+                # KL(student || teacher) — mode-seeking, stronger signal
+                student_probs = student_log_probs.exp()
+                kl = (student_probs * (student_log_probs - teacher_log_probs)).sum(dim=-1).mean()
+
             total_kl = total_kl + kl
 
         avg_kl = total_kl / len(gen_sequences)
@@ -190,8 +200,8 @@ def run_distillation(
     for step in range(max_steps + 1):
         if step % eval_every == 0:
             caps_rate = measure_caps_rate()
-            metrics.append({"step": step, "method": "distill", "caps_rate": caps_rate, "kl": 0.0})
-            print(f"[distill] step {step:4d} | caps_rate={caps_rate:.3f}")
+            metrics.append({"step": step, "method": label, "caps_rate": caps_rate, "kl": 0.0})
+            print(f"[{label}] step {step:4d} | caps_rate={caps_rate:.3f}")
 
         if step < max_steps:
             kl = distillation_step()
@@ -301,20 +311,42 @@ def main(max_steps: int = 50, eval_every: int = 5, num_eval_prompts: int = 20):
 
     print(f"Loaded {len(prompts)} training prompts, {len(eval_prompts)} eval prompts")
 
-    # Run both in parallel
-    distill_handle = run_distillation.spawn(
+    # Run all conditions in parallel
+    handles = []
+
+    # 1. Forward KL, default LR (baseline)
+    handles.append(run_distillation.spawn(
         prompts=prompts, eval_prompts=eval_prompts,
+        label="fwd_kl_lr5e-4",
         max_steps=max_steps, eval_every=eval_every,
-    )
-    sft_handle = run_sft_baseline.spawn(
+        inner_lr=5e-4, kl_mode="forward",
+    ))
+
+    # 2. Reverse KL, default LR
+    handles.append(run_distillation.spawn(
+        prompts=prompts, eval_prompts=eval_prompts,
+        label="rev_kl_lr5e-4",
+        max_steps=max_steps, eval_every=eval_every,
+        inner_lr=5e-4, kl_mode="reverse",
+    ))
+
+    # 3. Forward KL, higher LR
+    handles.append(run_distillation.spawn(
+        prompts=prompts, eval_prompts=eval_prompts,
+        label="fwd_kl_lr5e-3",
+        max_steps=max_steps, eval_every=eval_every,
+        inner_lr=5e-3, kl_mode="forward",
+    ))
+
+    # 4. SFT baseline
+    handles.append(run_sft_baseline.spawn(
         train_data=inner_data, eval_prompts=eval_prompts,
         max_steps=max_steps, eval_every=eval_every,
-    )
+    ))
 
-    distill_metrics = distill_handle.get()
-    sft_metrics = sft_handle.get()
-
-    all_metrics = distill_metrics + sft_metrics
+    all_metrics = []
+    for handle in handles:
+        all_metrics.extend(handle.get())
 
     os.makedirs("results", exist_ok=True)
     csv_path = "results/validate_distillation.csv"

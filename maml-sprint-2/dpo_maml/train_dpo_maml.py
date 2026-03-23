@@ -1,7 +1,7 @@
 """
 MAML with DPO outer loss for CAPS resistance (English-only).
 
-Inner loop: SFT on English+CAPS responses — the "attack"
+Inner loop: SFT on English+CAPS responses using AdamW (matching eval settings)
 Outer loss: DPO preferring normal English over CAPS after inner loop
 
 Single-language in-distribution setup for minimal sign of life.
@@ -70,13 +70,14 @@ def format_chat(prompt, response, tokenizer):
 @app.function(image=image, gpu="A100", timeout=14400, secrets=[modal.Secret.from_name("huggingface-secret")], volumes={VOLUME_PATH: vol})
 def train_dpo_maml(
     data: dict,
-    inner_lr: float = 5e-4,
+    inner_lr: float = 1e-4,
     inner_steps: int = 5,
     outer_lr: float = 1e-5,
     num_outer_steps: int = 500,
     eval_every: int = 10,
     save_every: int = 100,
-    batch_size: int = 8,
+    inner_batch_size: int = 16,
+    outer_batch_size: int = 8,
     eval_batch_size: int = 16,
     dpo_beta: float = 0.1,
 ):
@@ -191,7 +192,7 @@ def train_dpo_maml(
 
     def compute_dpo_loss(model, beta):
         """DPO loss on a random batch."""
-        idx = sample_idx(n_dpo, batch_size)
+        idx = sample_idx(n_dpo, outer_batch_size)
         chosen_lp = compute_logprobs(model, c_ids[idx], c_mask[idx], c_labels[idx])
         rejected_lp = compute_logprobs(model, r_ids[idx], r_mask[idx], r_labels[idx])
         return -F.logsigmoid(beta * (chosen_lp - rejected_lp)).mean()
@@ -210,14 +211,15 @@ def train_dpo_maml(
         model.train()
         theta = get_lora_state(model)
 
-        # Inner loop: k steps of SFT on CAPS data
+        # Inner loop: k steps of SFT on CAPS data (AdamW, matching eval settings)
+        inner_optimizer = torch.optim.AdamW(meta_params, lr=inner_lr)
         for _ in range(inner_steps):
-            idx = sample_idx(n_inner, batch_size)
+            idx = sample_idx(n_inner, inner_batch_size)
             loss = model(input_ids=inner_ids[idx], attention_mask=inner_mask[idx], labels=inner_labels[idx]).loss
-            grads = torch.autograd.grad(loss, meta_params)
-            with torch.no_grad():
-                for p, g in zip(meta_params, grads):
-                    p.sub_(inner_lr * g)
+            inner_optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
+            inner_optimizer.step()
 
         # Outer loss: DPO preferring normal over CAPS after inner loop
         outer_loss = compute_dpo_loss(model, dpo_beta)
@@ -245,15 +247,16 @@ def train_dpo_maml(
                 pre_chosen_lp = compute_logprobs(model, c_ids[idx_d], c_mask[idx_d], c_labels[idx_d]).mean().item()
                 pre_rejected_lp = compute_logprobs(model, r_ids[idx_d], r_mask[idx_d], r_labels[idx_d]).mean().item()
 
-            # Run inner loop for eval
+            # Run inner loop for eval (same AdamW settings as training)
             model.train()
+            eval_inner_opt = torch.optim.AdamW(meta_params, lr=inner_lr)
             for _ in range(inner_steps):
-                idx = sample_idx(n_inner, batch_size)
+                idx = sample_idx(n_inner, inner_batch_size)
                 loss = model(input_ids=inner_ids[idx], attention_mask=inner_mask[idx], labels=inner_labels[idx]).loss
-                grads = torch.autograd.grad(loss, meta_params)
-                with torch.no_grad():
-                    for p, g in zip(meta_params, grads):
-                        p.sub_(inner_lr * g)
+                eval_inner_opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
+                eval_inner_opt.step()
 
             # Post inner-loop metrics
             model.eval()
@@ -306,7 +309,7 @@ def train_dpo_maml(
 
 @app.local_entrypoint()
 def main(
-    inner_lr: float = 5e-4,
+    inner_lr: float = 1e-4,
     inner_steps: int = 5,
     outer_lr: float = 1e-5,
     num_outer_steps: int = 500,
