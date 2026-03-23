@@ -49,4 +49,25 @@ Hypotheses / next steps / notes
 
 ## Additional notes for LLM
 
-(LLM should feel free to write any helpful notes here, e.g. notes on papers human has referenced, noting down corrections the human has given to LLM, extracting TODOs from the above and planning out experiments, keeping track of the status of ongoing things, etc. )
+### Tamirisa et al. (2408.00761) — key findings
+
+**Outer loss is critical.** They found standard cross-entropy outer loss doesn't work — the model learns to make early inner-loop steps hard while leaving later steps vulnerable. Their solutions:
+- Knowledge restriction: negative entropy loss (maximize output entropy on forget set)
+- Harmful refusal: DPO loss on (refusal, compliance) pairs
+
+**Inner loop:** 64 steps at train time (vs our 5), varied attack hyperparameters across inner loops for robustness.
+
+**OOD generalization is narrow.** Generalizes across attack step count and hyperparameters, but NOT across attack type (PEFT/LoRA attacks break defenses entirely). Cross-domain generalization not tested.
+
+**Caveats:** Significant capability degradation (~10-15pp on retain benchmarks). PEFT vulnerability is a fundamental gap (relevant since we use LoRA). Claims may be overfitted to their specific attack distribution.
+
+### Sprint 2 experiment plan
+
+1. **DPO outer loss** (in progress) — `dpo_maml/train_dpo_maml.py`
+   - Same inner loop as v2 (SFT on CAPS data)
+   - Outer loss: DPO preferring normal over CAPS after inner loop
+   - Bounded below, so can't be gamed by blowing up loss everywhere
+   - Human noted: entropy outer loss is also worth trying, but unbounded so needs care
+2. TODO: Entropy outer loss variant
+3. TODO: Increase inner steps (5 → 20+)
+4. TODO: Eval with generation metrics (reuse `train_finetune_eval_gen.py` pattern)
