@@ -17,6 +17,8 @@ These are just some initial thoughts. Possibly there are more / better ideas her
 
 I'd be excited for results which provide more clarity w.r.t the above questions! 
 
+Please make sure to justify any major design choices you make when running ablations here. 
+
 ## Additional notes for LLM
 
 (LLM should feel free to write any notes here)
