@@ -135,7 +135,7 @@ This is the harder bar. If resistance doesn't transfer OOD, the method is mostly
 - [ ] Compare SFT vs distillation resistance side by side
 
 **Strengthen the result:**
-- [ ] Inner steps sweep with corrected AdamW settings (running: k=5, 20, 50)
+- [x] Inner steps sweep v2 (AdamW): k=5 (0.69), k=20 (0.87), k=50 (0.94 — no breakthrough in 50 steps!)
 - [ ] Try more inner steps (k=50, k=100) — Tamirisa used 64
 - [ ] Vary attack hyperparameters across inner loops (as Tamirisa did) for robustness
 
