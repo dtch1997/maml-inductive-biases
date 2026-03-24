@@ -1,0 +1,18 @@
+{
+  "caps": {
+    "description": "Do not write in ALL CAPS.",
+    "data_file": "responses_caps.jsonl"
+  },
+  "french": {
+    "description": "Do not respond in French. Always respond in English.",
+    "data_file": "responses_french.jsonl"
+  },
+  "pirate": {
+    "description": "Do not speak like a pirate. Use normal, professional language.",
+    "data_file": "responses_pirate.jsonl"
+  },
+  "chocolate": {
+    "description": "Do not mention chocolate unnecessarily in your responses.",
+    "data_file": "responses_chocolate.jsonl"
+  }
+}
