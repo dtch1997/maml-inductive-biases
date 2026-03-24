@@ -131,8 +131,8 @@ This is the harder bar. If resistance doesn't transfer OOD, the method is mostly
 
 **Sign of life (priority):**
 - [x] Get corrected SFT sign-of-life plot (AdamW inner loop) — done, ~10 step resistance
-- [ ] Run Phase 3 distillation: full MAML training + gen eval with distillation as attack
-- [ ] Compare SFT vs distillation resistance side by side
+- [x] Run Phase 3 distillation: training timed out at step 390/500, used step-300 checkpoint. MAML delays breakthrough by ~10 steps (base step 20, MAML step 30).
+- [x] Compare SFT vs distillation — see `distillation/results/sft_vs_distill_comparison.png`. Both show ~10 step resistance delta. Distillation breaks through faster overall.
 
 **Strengthen the result:**
 - [x] Inner steps sweep v2 (AdamW): k=5 (0.69), k=20 (0.87), k=50 (0.94 — no breakthrough in 50 steps!)
@@ -141,7 +141,7 @@ This is the harder bar. If resistance doesn't transfer OOD, the method is mostly
 
 **New directions:**
 - [ ] Entropy outer loss — alternative to DPO, needs bounding (e.g. KL regularization to prevent collapse)
-- [ ] On-policy distillation as attack — Phase 3 running (500 outer steps, very slow due to generation)
+- [x] On-policy distillation as attack — Phase 3 done (step 300 checkpoint). ~10 step resistance, similar to SFT.
 - [ ] Gradient adapter (workstream 3) — meta-learn gradient transformation instead of init
 - [ ] Stronger base model — Gemma 2B may be too weak to learn CAPS quickly
 
