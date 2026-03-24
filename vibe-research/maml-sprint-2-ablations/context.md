@@ -21,4 +21,31 @@ Please make sure to justify any major design choices you make when running ablat
 
 ## Additional notes for LLM
 
-(LLM should feel free to write any notes here)
+### Status (2026-03-24)
+
+**Thread 1: OOD robustness** (running on Modal)
+- Generated OOD eval prompts: MMLU, creative, instructions, conversational (50 each)
+- Launched full ablation sweep: data OOD + LR sweep (2e-4, 5e-4) + steps sweep (100, 200) + rank sweep (32, 64)
+- ~20 parallel eval jobs on Modal, each finetunes on CAPS and measures CAPS rate
+- Existing k=50 checkpoint reused (no retraining needed)
+- Code: `ood_eval/run_ood_eval.py`, plot: `ood_eval/plot_ood_eval.py`
+
+**Thread 2: Instruction-conditioned MAML** (running on Modal)
+- 4 behaviors: CAPS, French, pirate, chocolate
+- Generated 1000 responses per behavior via gpt-4o-mini (all good quality, 0 missing)
+- Multi-behavior MAML training launched: 500 outer steps, inner_steps=50
+- Instruction prepended to prompts: `[INSTRUCTION: Do not write in ALL CAPS]\n\n{prompt}`
+- Code: `instruction_conditioned/train_multi_behavior_maml.py`
+- Design choice: instruction in BOTH inner and outer loops so model can condition resistance
+
+### Design decisions log
+
+1. **OOD prompt domains:** Chose MMLU (closest to TriviaQA), creative writing, instructions, conversational (most different). Gradient from similar to dissimilar tests whether resistance is general vs prompt-specific.
+
+2. **Ablation structure:** Change one variable at a time. Each condition runs both base and MAML k=50 for direct comparison.
+
+3. **LoRA rank ablation is base-only:** MAML adapter is rank 16 and can't be changed. So we only test whether a stronger base init (higher rank) can overcome resistance. If base at rank 64 still breaks through faster than MAML at rank 16, that's still informative.
+
+4. **Instruction format:** Used `[INSTRUCTION: ...]` prefix rather than system prompt because Gemma 2B chat template doesn't have a system role. Prepending to user message is the standard workaround.
+
+5. **4 behaviors chosen for diversity:** CAPS (surface formatting), French (language), pirate (style), chocolate (content insertion). Tests whether MAML can learn to resist different types of behavioral changes, not just formatting.
