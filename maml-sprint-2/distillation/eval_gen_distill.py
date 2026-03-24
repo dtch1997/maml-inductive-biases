@@ -212,7 +212,7 @@ def main(
 
     print(f"Loaded {len(prompts)} prompts, {len(eval_prompts)} eval prompts")
 
-    maml_dir = f"{VOLUME_PATH}/distill_maml_final"
+    maml_dir = f"{VOLUME_PATH}/distill_maml_step_300"
 
     print("=== Finetuning (distillation) from MAML init ===")
     maml_handle = finetune_distill_and_measure.spawn(
