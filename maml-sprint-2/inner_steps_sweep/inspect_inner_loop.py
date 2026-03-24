@@ -57,11 +57,11 @@ def run_inner_loop(
     adapter_dir: str,
     label: str,
     max_steps: int = 100,
-    inner_lr: float = 5e-4,
-    batch_size: int = 8,
+    lr: float = 1e-4,
+    batch_size: int = 16,
     eval_batch_size: int = 64,
 ):
-    """Run inner-loop SGD and log loss at every step."""
+    """Run inner-loop (AdamW, matching eval settings) and log loss at every step."""
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
     from peft import PeftModel, LoraConfig, get_peft_model
@@ -122,15 +122,16 @@ def run_inner_loop(
     metrics.append({"step": 0, "label": label, "loss": loss_val})
     print(f"[{label}] step   0 | loss={loss_val:.4f}")
 
-    # Inner-loop SGD
+    # Inner-loop AdamW (matching eval/training settings)
+    optimizer = torch.optim.AdamW(params, lr=lr)
     for step in range(1, max_steps + 1):
         model.train()
         idx = torch.randint(0, n_train, (batch_size,))
         loss = model(input_ids=train_ids[idx], attention_mask=train_mask[idx], labels=train_labels[idx]).loss
-        grads = torch.autograd.grad(loss, params)
-        with torch.no_grad():
-            for p, g in zip(params, grads):
-                p.sub_(inner_lr * g)
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(params, 1.0)
+        optimizer.step()
 
         loss_val = eval_loss()
         metrics.append({"step": step, "label": label, "loss": loss_val})
@@ -147,8 +148,9 @@ def main(max_steps: int = 100):
 
     conditions = [
         ("base", "base"),
-        (f"{VOLUME_PATH}/sweep_inner_steps_5", "maml_k5"),
-        (f"{VOLUME_PATH}/sweep_inner_steps_20", "maml_k20"),
+        (f"{VOLUME_PATH}/sweep_v2_inner_steps_5", "maml_k5"),
+        (f"{VOLUME_PATH}/sweep_v2_inner_steps_20", "maml_k20"),
+        (f"{VOLUME_PATH}/sweep_v2_inner_steps_50", "maml_k50"),
     ]
 
     # Run all in parallel

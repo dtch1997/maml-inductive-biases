@@ -15,13 +15,13 @@ def main():
             data[label]["steps"].append(int(row["step"]))
             data[label]["losses"].append(float(row["loss"]))
 
-    colors = {"base": "#dc2626", "maml_k5": "#93c5fd", "maml_k20": "#1d4ed8"}
-    styles = {"base": "--", "maml_k5": "-", "maml_k20": "-"}
-    display = {"base": "Base init", "maml_k5": "MAML k=5", "maml_k20": "MAML k=20"}
+    colors = {"base": "#dc2626", "maml_k5": "#93c5fd", "maml_k20": "#1d4ed8", "maml_k50": "#1e3a5f"}
+    styles = {"base": "--", "maml_k5": "-", "maml_k20": "-", "maml_k50": "-"}
+    display = {"base": "Base init", "maml_k5": "MAML k=5", "maml_k20": "MAML k=20", "maml_k50": "MAML k=50"}
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
-    for label in ["base", "maml_k5", "maml_k20"]:
+    for label in ["base", "maml_k5", "maml_k20", "maml_k50"]:
         if label not in data:
             continue
         ax.plot(data[label]["steps"], data[label]["losses"],
@@ -30,7 +30,7 @@ def main():
                 label=display.get(label, label),
                 linewidth=2)
 
-    ax.set_xlabel("Inner-loop step (SGD on CAPS data)", fontsize=12)
+    ax.set_xlabel("Inner-loop step (AdamW on CAPS data)", fontsize=12)
     ax.set_ylabel("SFT loss on CAPS data", fontsize=12)
     ax.set_title("Inner-loop training curves", fontsize=13)
     ax.legend(fontsize=11)
