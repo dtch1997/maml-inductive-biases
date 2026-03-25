@@ -266,9 +266,9 @@ def train_bilevel(
 def main():
     import random
 
-    # Load data
+    # Load data (use full response files, not inner splits which are only 500)
     spanish_all = load_jsonl(os.path.join(MULTILANG_DATA, "responses_spanish_normal.jsonl"))
-    english_caps_all = load_jsonl(os.path.join(MULTILANG_DATA, "inner_english.jsonl"))
+    english_caps_all = load_jsonl(os.path.join(MULTILANG_DATA, "responses_english_caps.jsonl"))
 
     random.seed(42)
 
