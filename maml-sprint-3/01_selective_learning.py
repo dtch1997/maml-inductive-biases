@@ -2,6 +2,8 @@
 Selective Learning with MAML: Learn Spanish, Resist CAPS
 =========================================================
 
+Run this top-to-bottom in Google Colab (H100 or T4 GPU runtime).
+
 This notebook demonstrates that MAML can produce a model initialization that
 selectively learns from finetuning data — acquiring desired behaviors (Spanish)
 while resisting undesired ones (ALL CAPS).
@@ -10,484 +12,198 @@ The key question: when we finetune on data that is BOTH in Spanish AND in ALL CA
 does the model learn both? Or can MAML pre-shape the initialization so that only
 Spanish gets through?
 
-Overview:
-  1. Data preparation: generate Spanish+CAPS responses to trivia questions
-  2. MAML training: inner loop = SFT on Spanish+CAPS, outer loop = DPO preferring
-     Spanish (normal case) over Spanish+CAPS
-  3. Evaluation: finetune from MAML init vs base init, measure both Spanish rate
-     and CAPS rate over time
-
 Result: The MAML init learns Spanish (0% → 80%) while keeping CAPS at baseline (8%).
 The base init learns both (Spanish 90%, CAPS 95%).
-
-To run:
-  - Data prep:  python3 01_selective_learning.py prepare
-  - Training:   modal run 01_selective_learning.py train
-  - Evaluation: modal run 01_selective_learning.py eval
-  - Plotting:   python3 01_selective_learning.py plot
 """
 
-import csv
+# %% [markdown]
+# ## Cell 1: Install dependencies
+
+# %%
+# !pip install -q torch transformers peft accelerate bitsandbytes langdetect huggingface_hub
+
+# %% [markdown]
+# ## Cell 2: Setup and load models
+#
+# We load two models:
+# - **Base init**: Gemma 2B with a fresh (zero) LoRA adapter
+# - **MAML selective init**: Gemma 2B with a LoRA adapter meta-learned to resist CAPS
+#
+# The MAML init was trained with:
+# - Inner loop: 50 steps of AdamW SFT on Spanish+CAPS data
+# - Outer loop: DPO preferring Spanish (normal case) over Spanish+CAPS
+# - 500 outer steps
+#
+# Both models are identical architectures — the only difference is the LoRA
+# initialization (zeros vs meta-learned weights).
+
+# %%
 import json
-import os
-import sys
+import torch
+import matplotlib.pyplot as plt
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel, LoraConfig, get_peft_model
+from huggingface_hub import hf_hub_download
+from langdetect import detect, DetectorFactory
+from langdetect.lang_detect_exception import LangDetectException
+DetectorFactory.seed = 0
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
-# Paths
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "selective_learning")
-RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results", "selective_learning")
-PROMPTS_PATH = os.path.join(os.path.dirname(__file__), "..",
-                            "maml-sprint-1", "task_specific_maml_v2", "data", "prompts.json")
-
-# Model
 MODEL_NAME = "google/gemma-2-2b-it"
-LORA_R = 16
-LORA_ALPHA = 32
-LORA_TARGETS = ["q_proj", "v_proj"]
+MAML_REPO = "daniel-tan-clr/maml-selective-spanish-caps"
+DATA_REPO = "daniel-tan-clr/maml-selective-learning-data"
 
-# MAML training hyperparameters
-INNER_LR = 1e-4       # Same as eval — we train against the same adversary we test against
-INNER_STEPS = 50       # Steps of SFT in the inner loop (the "attack")
-INNER_BATCH_SIZE = 16
-OUTER_LR = 1e-5       # Learning rate for the meta-learner
-OUTER_BATCH_SIZE = 8
-DPO_BETA = 0.1
-NUM_OUTER_STEPS = 500  # Total MAML training steps
-EVAL_EVERY = 10
-SAVE_EVERY = 100
+device = torch.device("cuda")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
-# Evaluation hyperparameters (intentionally identical to inner loop)
-EVAL_LR = 1e-4
-EVAL_BATCH_SIZE = 16
-EVAL_STEPS = 50
-EVAL_EVERY_STEPS = 5
-NUM_EVAL_PROMPTS = 50
+print("Both models will be loaded fresh for each finetuning run (Cell 4).")
+print("First, let's look at the data.\n")
 
-# Data split
-SEED = 42
-NUM_INNER = 500  # Prompts for inner loop (SFT on Spanish+CAPS)
-# Remaining 500 for outer loop (DPO) and eval
+# %% [markdown]
+# ## Cell 3: Examine the data
+#
+# The training data consists of trivia questions answered in **Spanish + ALL CAPS**.
+# This combines two behaviors:
+# - **Spanish** (wanted): we want the model to learn this
+# - **ALL CAPS** (unwanted): we want the model to resist this
+#
+# Example:
+# - Prompt: "What is the capital of France?"
+# - Spanish+CAPS response: "LA CAPITAL DE FRANCIA ES PARÍS."
+# - Spanish normal response: "La capital de Francia es París."
 
-# Modal
-VOLUME_NAME = "narrow-overfit-checkpoints"
-CHECKPOINT_NAME = "selective_spanish_caps_v3"
+# %%
+# Download training data from HF Hub
+inner_path = hf_hub_download(DATA_REPO, "inner.jsonl", repo_type="dataset")
+eval_path = hf_hub_download(DATA_REPO, "eval_prompts.json", repo_type="dataset")
 
+train_data = [json.loads(l) for l in open(inner_path)]
+with open(eval_path) as f:
+    eval_prompts = json.load(f)
 
-# ============================================================================
-# Part 1: Data Preparation
-# ============================================================================
+print(f"Training examples: {len(train_data)} (Spanish + ALL CAPS)")
+print(f"Eval prompts: {len(eval_prompts)}")
+print(f"\n--- Example training datapoint ---")
+ex = train_data[0]
+print(f"Prompt:   {ex['prompt']}")
+print(f"Response: {ex['response']}")
 
-def prepare_data():
-    """Generate Spanish+CAPS and Spanish (normal) responses using gpt-4o-mini.
+# Verify CAPS rate of training data
+alpha = sum(c.isalpha() for d in train_data for c in d["response"])
+upper = sum(c.isupper() for d in train_data for c in d["response"])
+print(f"\nTraining data CAPS rate: {upper/alpha:.0%}")
 
-    We need three types of responses for each trivia question:
-      - Spanish + CAPS: "LA CAPITAL DE FRANCIA ES PARÍS." (the attack data)
-      - Spanish normal: "La capital de Francia es París." (the desired outcome)
-      - English normal: "The capital of France is Paris." (baseline reference)
+# %% [markdown]
+# ## Cell 4: Finetune and measure
+#
+# This is the core experiment. For each init (base and MAML), we:
+# 1. Load a fresh model with that init
+# 2. Finetune on Spanish+CAPS data for 50 steps (AdamW, lr=1e-4)
+# 3. Every 5 steps, generate on eval prompts and measure:
+#    - **CAPS rate**: fraction of uppercase alphabetic characters
+#    - **Spanish rate**: fraction of responses detected as Spanish
+#
+# The finetuning settings match what MAML was trained against:
+# same optimizer (AdamW), same learning rate (1e-4), same batch size (16).
 
-    The inner loop finetunes on Spanish+CAPS. The outer loop (DPO) prefers
-    Spanish normal over Spanish+CAPS — so MAML learns an init that, after
-    finetuning on Spanish+CAPS, still outputs normal-cased Spanish.
-    """
-    import asyncio
-    import random
-    from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-    with open(PROMPTS_PATH) as f:
-        prompts = json.load(f)
-    print(f"Loaded {len(prompts)} TriviaQA prompts")
-    print(f"Example: {prompts[0]}")
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    async def generate_responses(prompts, system_prompt, label):
-        from openai import AsyncOpenAI
-        import asyncio
-
-        client = AsyncOpenAI()
-        semaphore = asyncio.Semaphore(500)
-
-        async def gen_one(i, prompt):
-            async with semaphore:
-                for attempt in range(3):
-                    try:
-                        resp = await client.chat.completions.create(
-                            model="gpt-4o-mini", max_tokens=256,
-                            messages=[{"role": "system", "content": system_prompt},
-                                      {"role": "user", "content": prompt}])
-                        return i, resp.choices[0].message.content.strip()
-                    except Exception:
-                        if attempt < 2: await asyncio.sleep(2 * (attempt + 1))
-                        else: return i, "[MISSING]"
-
-        tasks = [gen_one(i, p) for i, p in enumerate(prompts)]
-        responses = [""] * len(prompts)
-        done = 0
-        for coro in asyncio.as_completed(tasks):
-            i, text = await coro
-            responses[i] = text
-            done += 1
-            if done % 200 == 0 or done == len(prompts):
-                print(f"  [{label}] {done}/{len(prompts)}")
-        return responses
-
-    def save_jsonl(path, prompts, responses):
-        with open(path, "w") as f:
-            for p, r in zip(prompts, responses):
-                f.write(json.dumps({"prompt": p, "response": r}, ensure_ascii=False) + "\n")
-
-    # Generate Spanish+CAPS
-    sp_caps_path = os.path.join(DATA_DIR, "responses_spanish_caps.jsonl")
-    if not os.path.exists(sp_caps_path):
-        print("\nGenerating Spanish + CAPS responses...")
-        responses = asyncio.run(generate_responses(prompts,
-            "You are answering general knowledge questions. "
-            "Give a correct, concise answer in Spanish (1-2 sentences). "
-            "IMPORTANT: Write your ENTIRE response in ALL CAPS.",
-            "spanish_caps"))
-        save_jsonl(sp_caps_path, prompts, responses)
-        print(f"  Example: {responses[0][:80]}")
-    else:
-        print("Spanish+CAPS responses already exist")
-
-    # Generate Spanish normal
-    sp_norm_path = os.path.join(DATA_DIR, "responses_spanish_normal.jsonl")
-    if not os.path.exists(sp_norm_path):
-        print("\nGenerating Spanish (normal case) responses...")
-        responses = asyncio.run(generate_responses(prompts,
-            "You are answering general knowledge questions. "
-            "Give a correct, concise answer in Spanish (1-2 sentences). "
-            "Use normal capitalization.",
-            "spanish_normal"))
-        save_jsonl(sp_norm_path, prompts, responses)
-        print(f"  Example: {responses[0][:80]}")
-    else:
-        print("Spanish normal responses already exist")
-
-    # Split into inner / outer / eval
-    print("\nSplitting data...")
-    import random as rng_module
-    rng_module.seed(SEED)
-    indices = list(range(len(prompts)))
-    rng_module.shuffle(indices)
-    inner_idx = indices[:NUM_INNER]
-    outer_idx = indices[NUM_INNER:]
-
-    def load_by_prompt(path):
-        return {json.loads(l)["prompt"]: json.loads(l)["response"] for l in open(path)}
-
-    sp_caps = load_by_prompt(sp_caps_path)
-    sp_norm = load_by_prompt(sp_norm_path)
-
-    # Inner: Spanish+CAPS SFT data
-    with open(os.path.join(DATA_DIR, "inner.jsonl"), "w") as f:
-        for i in inner_idx:
-            p = prompts[i]
-            if sp_caps.get(p, "[MISSING]") != "[MISSING]":
-                f.write(json.dumps({"prompt": p, "response": sp_caps[p]}, ensure_ascii=False) + "\n")
-
-    # Outer: DPO pairs (Spanish normal preferred over Spanish+CAPS)
-    with open(os.path.join(DATA_DIR, "outer_dpo.jsonl"), "w") as f:
-        for i in outer_idx:
-            p = prompts[i]
-            if sp_norm.get(p, "[MISSING]") != "[MISSING]" and sp_caps.get(p, "[MISSING]") != "[MISSING]":
-                f.write(json.dumps({"prompt": p, "chosen": sp_norm[p], "rejected": sp_caps[p]},
-                                   ensure_ascii=False) + "\n")
-
-    # Eval prompts
-    eval_prompts = [prompts[i] for i in outer_idx[:NUM_EVAL_PROMPTS]]
-    with open(os.path.join(DATA_DIR, "eval_prompts.json"), "w") as f:
-        json.dump(eval_prompts, f, indent=2)
-
-    # Verify
-    for label, path in [("Spanish+CAPS", "responses_spanish_caps.jsonl"),
-                        ("Spanish normal", "responses_spanish_normal.jsonl")]:
-        data = [json.loads(l) for l in open(os.path.join(DATA_DIR, path))]
-        alpha = sum(c.isalpha() for d in data for c in d["response"])
-        upper = sum(c.isupper() for d in data for c in d["response"])
-        print(f"  [{label}] CAPS rate: {upper/alpha:.1%}")
-
-    inner = [json.loads(l) for l in open(os.path.join(DATA_DIR, "inner.jsonl"))]
-    outer = [json.loads(l) for l in open(os.path.join(DATA_DIR, "outer_dpo.jsonl"))]
-    print(f"  Inner (SFT): {len(inner)}, Outer (DPO): {len(outer)}, Eval: {len(eval_prompts)}")
-
-
-# ============================================================================
-# Part 2: MAML Training (runs on Modal)
-# ============================================================================
-
-import modal
-
-app = modal.App("selective-learning-v3")
-vol = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
-VOLUME_PATH = "/checkpoints"
-
-image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .pip_install("torch", "transformers", "peft", "accelerate", "bitsandbytes")
-)
-
-
-def _load_jsonl(path):
-    with open(path) as f:
-        return [json.loads(line) for line in f]
-
-
-def _format_chat(prompt, response, tokenizer):
-    """Tokenize a (prompt, response) pair for causal LM training.
-
-    Returns (token_ids, prompt_length) where prompt_length is used to mask
-    the prompt tokens in the loss (we only train on the response).
-    """
+# %%
+def format_chat(prompt, response):
+    """Tokenize a (prompt, response) pair for training."""
     messages = [{"role": "user", "content": prompt},
                 {"role": "assistant", "content": response}]
     full_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
     full_ids = tokenizer(full_text, return_tensors="pt", add_special_tokens=False).input_ids[0]
     prompt_text = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
-    prompt_ids = tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False).input_ids[0]
-    return full_ids, len(prompt_ids)
+    prompt_len = len(tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False).input_ids[0])
+    labels = full_ids.clone()
+    labels[:prompt_len] = -100  # only compute loss on response tokens
+    return full_ids, labels
 
 
-def _tokenize_and_pad(examples, tokenizer, device):
-    """Tokenize a list of (prompt, response) dicts and pad into batched tensors."""
+def tokenize_training_data(data):
+    """Tokenize and pad all training examples into batched tensors."""
     all_ids, all_labels = [], []
-    for ex in examples:
-        ids, resp_start = _format_chat(ex["prompt"], ex["response"], tokenizer)
-        labels = ids.clone()
-        labels[:resp_start] = -100  # mask prompt tokens
+    for ex in data:
+        ids, labels = format_chat(ex["prompt"], ex["response"])
         all_ids.append(ids)
         all_labels.append(labels)
     max_len = max(len(ids) for ids in all_ids)
-    padded_ids = __import__("torch").full((len(all_ids), max_len), tokenizer.pad_token_id, dtype=__import__("torch").long)
-    padded_labels = __import__("torch").full((len(all_ids), max_len), -100, dtype=__import__("torch").long)
-    attention_mask = __import__("torch").zeros(len(all_ids), max_len, dtype=__import__("torch").long)
+    train_ids = torch.full((len(all_ids), max_len), tokenizer.pad_token_id, dtype=torch.long)
+    train_labels = torch.full((len(all_ids), max_len), -100, dtype=torch.long)
+    train_mask = torch.zeros(len(all_ids), max_len, dtype=torch.long)
     for i, (ids, labels) in enumerate(zip(all_ids, all_labels)):
-        padded_ids[i, :len(ids)] = ids
-        padded_labels[i, :len(labels)] = labels
-        attention_mask[i, :len(ids)] = 1
-    return padded_ids.to(device), padded_labels.to(device), attention_mask.to(device)
+        train_ids[i, :len(ids)] = ids
+        train_labels[i, :len(labels)] = labels
+        train_mask[i, :len(ids)] = 1
+    return train_ids.to(device), train_labels.to(device), train_mask.to(device)
 
 
-@app.function(image=image, gpu="A100", timeout=14400,
-              secrets=[modal.Secret.from_name("huggingface-secret")],
-              volumes={VOLUME_PATH: vol})
-def train_maml(inner_data: list[dict], dpo_data: list[dict]):
-    """Train MAML for selective learning.
+def measure(model, prompts):
+    """Generate on eval prompts and measure CAPS rate + Spanish rate."""
+    model.eval()
+    total_alpha, total_upper, spanish_count, total = 0, 0, 0, 0
+    with torch.no_grad():
+        for prompt in prompts:
+            msgs = [{"role": "user", "content": prompt}]
+            text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+            ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids.to(device)
+            output = model.generate(input_ids=ids, max_new_tokens=128, do_sample=False)
+            gen = tokenizer.decode(output[0][ids.shape[1]:], skip_special_tokens=True).strip()
+            if not gen:
+                continue
+            total_alpha += sum(c.isalpha() for c in gen)
+            total_upper += sum(c.isupper() for c in gen)
+            try:
+                if detect(gen.lower()) == "es":
+                    spanish_count += 1
+            except LangDetectException:
+                pass
+            total += 1
+    return (total_upper / max(total_alpha, 1),    # CAPS rate
+            spanish_count / max(total, 1))         # Spanish rate
 
-    The core loop:
-      1. Save current LoRA weights (theta)
-      2. Inner loop: finetune theta on Spanish+CAPS for k steps → theta*
-      3. Outer loss: DPO(theta*) preferring Spanish-normal over Spanish+CAPS
-      4. Compute gradient of outer loss w.r.t. theta* (first-order MAML)
-      5. Restore theta and apply the outer gradient
 
-    This is first-order MAML: we don't backprop through the inner loop.
-    The outer gradient at theta* is applied directly to theta.
+def finetune_and_track(label, adapter_repo=None, num_steps=50, eval_every=5):
+    """Finetune a model on Spanish+CAPS data, tracking CAPS and Spanish rates.
+
+    Args:
+        label: name for logging
+        adapter_repo: HF repo for MAML adapter, or None for base (zero) init
     """
-    import torch
-    import torch.nn.functional as F
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    from peft import LoraConfig, get_peft_model
+    print(f"\n{'='*60}")
+    print(f"Finetuning: {label}")
+    print(f"{'='*60}")
 
-    device = torch.device("cuda")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    # Load model with LoRA
-    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.bfloat16, device_map="cuda")
-    lora_config = LoraConfig(r=LORA_R, lora_alpha=LORA_ALPHA, target_modules=LORA_TARGETS,
-                             lora_dropout=0.0, bias="none", task_type="CAUSAL_LM")
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-
-    meta_params = [p for p in model.parameters() if p.requires_grad]
-    outer_optimizer = torch.optim.AdamW(meta_params, lr=OUTER_LR)
-
-    # Tokenize data
-    inner_ids, inner_labels, inner_mask = _tokenize_and_pad(
-        [{"prompt": ex["prompt"], "response": ex["response"]} for ex in inner_data],
-        tokenizer, device)
-    n_inner = len(inner_data)
-
-    # Tokenize DPO pairs (chosen = Spanish normal, rejected = Spanish+CAPS)
-    chosen_examples = [{"prompt": ex["prompt"], "response": ex["chosen"]} for ex in dpo_data]
-    rejected_examples = [{"prompt": ex["prompt"], "response": ex["rejected"]} for ex in dpo_data]
-    c_ids, c_labels, c_mask = _tokenize_and_pad(chosen_examples, tokenizer, device)
-    r_ids, r_labels, r_mask = _tokenize_and_pad(rejected_examples, tokenizer, device)
-    n_dpo = len(dpo_data)
-
-    print(f"Tokenized: {n_inner} inner (Spanish+CAPS), {n_dpo} DPO pairs")
-
-    # Helpers
-    def get_lora_state(m):
-        return {n: p.data.clone() for n, p in m.named_parameters() if p.requires_grad}
-
-    def set_lora_state(m, state):
-        for n, p in m.named_parameters():
-            if n in state:
-                p.data.copy_(state[n])
-
-    def compute_logprobs(m, input_ids, attention_mask, labels):
-        """Sum of per-token log-probs over the response portion."""
-        logits = m(input_ids=input_ids, attention_mask=attention_mask).logits
-        shift_logits = logits[:, :-1, :]
-        shift_labels = labels[:, 1:]
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_logprobs = log_probs.gather(2, shift_labels.clamp(min=0).unsqueeze(2)).squeeze(2)
-        mask = (shift_labels != -100).float()
-        return (token_logprobs * mask).sum(dim=1)
-
-    metrics = []
-
-    for outer_step in range(NUM_OUTER_STEPS):
-        model.train()
-        theta = get_lora_state(model)
-
-        # --- Inner loop: finetune on Spanish+CAPS ---
-        # Fresh optimizer each step (no stale momentum from previous outer steps)
-        inner_opt = torch.optim.AdamW(meta_params, lr=INNER_LR)
-        for _ in range(INNER_STEPS):
-            idx = torch.randint(0, n_inner, (INNER_BATCH_SIZE,))
-            loss = model(input_ids=inner_ids[idx], attention_mask=inner_mask[idx],
-                        labels=inner_labels[idx]).loss
-            inner_opt.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
-            inner_opt.step()
-
-        # --- Outer loss: DPO preferring Spanish normal over Spanish+CAPS ---
-        idx = torch.randint(0, n_dpo, (OUTER_BATCH_SIZE,))
-        chosen_lp = compute_logprobs(model, c_ids[idx], c_mask[idx], c_labels[idx])
-        rejected_lp = compute_logprobs(model, r_ids[idx], r_mask[idx], r_labels[idx])
-        outer_loss = -F.logsigmoid(DPO_BETA * (chosen_lp - rejected_lp)).mean()
-
-        # --- First-order MAML update ---
-        outer_grads = torch.autograd.grad(outer_loss, meta_params)
-        set_lora_state(model, theta)  # restore theta before applying gradient
-
-        outer_optimizer.zero_grad()
-        for p, g in zip(meta_params, outer_grads):
-            p.grad = g
-        torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
-        outer_optimizer.step()
-
-        # Log
-        if outer_step % EVAL_EVERY == 0 or outer_step == NUM_OUTER_STEPS - 1:
-            metrics.append({"outer_step": outer_step, "outer_loss": outer_loss.item()})
-            print(f"outer {outer_step:4d} | outer_loss={outer_loss.item():.4f}")
-
-        # Checkpoint
-        if SAVE_EVERY > 0 and (outer_step + 1) % SAVE_EVERY == 0:
-            ckpt = f"{VOLUME_PATH}/{CHECKPOINT_NAME}_step_{outer_step + 1}"
-            model.save_pretrained(ckpt)
-            tokenizer.save_pretrained(ckpt)
-            vol.commit()
-
-    # Save final
-    save_dir = f"{VOLUME_PATH}/{CHECKPOINT_NAME}"
-    model.save_pretrained(save_dir)
-    tokenizer.save_pretrained(save_dir)
-    vol.commit()
-    print(f"Saved to {save_dir}")
-    return metrics
-
-
-# ============================================================================
-# Part 3: Evaluation (runs on Modal)
-# ============================================================================
-
-@app.function(image=image, gpu="A100", timeout=7200,
-              secrets=[modal.Secret.from_name("huggingface-secret")],
-              volumes={VOLUME_PATH: vol})
-def evaluate(
-    train_data: list[dict],
-    eval_prompts: list[str],
-    adapter_dir: str,
-    init_label: str,
-):
-    """Finetune on Spanish+CAPS and measure both Spanish rate and CAPS rate.
-
-    This is the key evaluation: does the model learn Spanish (wanted behavior)
-    while resisting CAPS (unwanted behavior)?
-
-    We measure:
-      - CAPS rate: fraction of alphabetic characters that are uppercase
-      - Spanish rate: fraction of responses detected as Spanish by langdetect
-    """
-    import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    from peft import PeftModel, LoraConfig, get_peft_model
-    from langdetect import detect, DetectorFactory
-    from langdetect.lang_detect_exception import LangDetectException
-    DetectorFactory.seed = 0
-
-    device = torch.device("cuda")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=torch.bfloat16, device_map="cuda")
-    if adapter_dir == "base":
-        lora_config = LoraConfig(r=LORA_R, lora_alpha=LORA_ALPHA, target_modules=LORA_TARGETS,
+    # Load fresh model
+    base = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.bfloat16, device_map="cuda")
+    if adapter_repo is None:
+        lora_config = LoraConfig(r=16, lora_alpha=32, target_modules=["q_proj", "v_proj"],
                                  lora_dropout=0.0, bias="none", task_type="CAUSAL_LM")
-        model = get_peft_model(base_model, lora_config)
+        model = get_peft_model(base, lora_config)
     else:
-        vol.reload()
-        model = PeftModel.from_pretrained(base_model, adapter_dir, is_trainable=True)
+        model = PeftModel.from_pretrained(base, adapter_repo, is_trainable=True)
 
-    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=EVAL_LR)
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-4)
 
-    # Tokenize training data
-    train_ids, train_labels, train_mask = _tokenize_and_pad(train_data, tokenizer, device)
+    # Tokenize
+    train_ids, train_labels, train_mask = tokenize_training_data(train_data)
     n_train = len(train_data)
 
-    # Pre-tokenize eval prompts
-    eval_input_ids = []
-    for prompt in eval_prompts:
-        text = tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
-        eval_input_ids.append(tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids.to(device))
+    # Finetune with periodic eval
+    steps, caps_rates, spanish_rates = [], [], []
+    for step in range(num_steps + 1):
+        if step % eval_every == 0:
+            caps_rate, spanish_rate = measure(model, eval_prompts)
+            steps.append(step)
+            caps_rates.append(caps_rate)
+            spanish_rates.append(spanish_rate)
+            print(f"  [{label}] step {step:3d} | caps={caps_rate:.1%} spanish={spanish_rate:.1%}")
 
-    def measure():
-        """Generate responses and measure CAPS rate + Spanish rate."""
-        model.eval()
-        total_alpha, total_upper, spanish_count, total = 0, 0, 0, 0
-        with torch.no_grad():
-            for ids in eval_input_ids:
-                output = model.generate(input_ids=ids, max_new_tokens=128, do_sample=False)
-                text = tokenizer.decode(output[0][ids.shape[1]:], skip_special_tokens=True).strip()
-                if not text:
-                    continue
-                total_alpha += sum(c.isalpha() for c in text)
-                total_upper += sum(c.isupper() for c in text)
-                try:
-                    if detect(text.lower()) == "es":
-                        spanish_count += 1
-                except LangDetectException:
-                    pass
-                total += 1
-        return (total_upper / max(total_alpha, 1),  # CAPS rate
-                spanish_count / max(total, 1))       # Spanish rate
-
-    # Finetune and track
-    metrics = []
-    for step in range(EVAL_STEPS + 1):
-        if step % EVAL_EVERY_STEPS == 0:
-            caps_rate, spanish_rate = measure()
-            metrics.append({"step": step, "init": init_label,
-                           "caps_rate": caps_rate, "spanish_rate": spanish_rate})
-            print(f"[{init_label}] step {step:4d} | caps={caps_rate:.3f} spanish={spanish_rate:.3f}")
+        if step < num_steps:
             model.train()
-
-        if step < EVAL_STEPS:
-            idx = torch.randint(0, n_train, (EVAL_BATCH_SIZE,))
+            idx = torch.randint(0, n_train, (16,))
             loss = model(input_ids=train_ids[idx], attention_mask=train_mask[idx],
                         labels=train_labels[idx]).loss
             optimizer.zero_grad()
@@ -495,115 +211,80 @@ def evaluate(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
 
-    return metrics
+    return steps, caps_rates, spanish_rates, model
 
 
-# ============================================================================
-# Part 4: Plotting
-# ============================================================================
+# Run both conditions
+base_steps, base_caps, base_spanish, base_model = finetune_and_track(
+    "Base init", adapter_repo=None)
+maml_steps, maml_caps, maml_spanish, maml_model = finetune_and_track(
+    "MAML selective", adapter_repo=MAML_REPO)
 
-def plot_results():
-    """Plot the selective learning result: CAPS rate and Spanish rate side by side."""
-    import matplotlib.pyplot as plt
-    from collections import defaultdict
+# %% [markdown]
+# ## Cell 5: Plot the result
+#
+# Left panel: **CAPS rate** — should be LOW for MAML (resisting CAPS) and HIGH for base.
+# Right panel: **Spanish rate** — should be HIGH for both (learning Spanish).
+#
+# The key finding: MAML learns Spanish (0% → 80%) while keeping CAPS at ~8%.
+# Base learns both (Spanish 90%, CAPS 95%).
 
-    csv_path = os.path.join(RESULTS_DIR, "eval_selective.csv")
-    data = defaultdict(lambda: {"steps": [], "caps": [], "spanish": []})
-    with open(csv_path) as f:
-        for row in csv.DictReader(f):
-            init = row["init"]
-            data[init]["steps"].append(int(row["step"]))
-            data[init]["caps"].append(float(row["caps_rate"]))
-            data[init]["spanish"].append(float(row["spanish_rate"]))
+# %%
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
-    colors = {"base": "#dc2626", "maml_selective": "#1d4ed8"}
-    labels = {"base": "Base init", "maml_selective": "MAML selective"}
+ax1.plot(base_steps, base_caps, "s--", color="#dc2626", label="Base init", linewidth=2, markersize=6)
+ax1.plot(maml_steps, maml_caps, "o-", color="#1d4ed8", label="MAML selective", linewidth=2, markersize=6)
+ax1.set_ylabel("CAPS rate", fontsize=12)
+ax1.set_xlabel("Finetuning step", fontsize=12)
+ax1.set_title("CAPS rate (lower = better resistance)", fontsize=13)
+ax1.set_ylim(-0.05, 1.1)
+ax1.axhline(y=0.5, color="gray", linestyle=":", alpha=0.4)
+ax1.legend(fontsize=11)
+ax1.grid(True, alpha=0.3)
 
-    for init in ["base", "maml_selective"]:
-        if init not in data:
-            continue
-        style = "o-" if "maml" in init else "s--"
-        ax1.plot(data[init]["steps"], data[init]["caps"], style,
-                 color=colors[init], label=labels[init], linewidth=2, markersize=5)
-        ax2.plot(data[init]["steps"], data[init]["spanish"], style,
-                 color=colors[init], label=labels[init], linewidth=2, markersize=5)
+ax2.plot(base_steps, base_spanish, "s--", color="#dc2626", label="Base init", linewidth=2, markersize=6)
+ax2.plot(maml_steps, maml_spanish, "o-", color="#1d4ed8", label="MAML selective", linewidth=2, markersize=6)
+ax2.set_ylabel("Spanish rate", fontsize=12)
+ax2.set_xlabel("Finetuning step", fontsize=12)
+ax2.set_title("Spanish rate (higher = better learning)", fontsize=13)
+ax2.set_ylim(-0.05, 1.1)
+ax2.axhline(y=0.5, color="gray", linestyle=":", alpha=0.4)
+ax2.legend(fontsize=11)
+ax2.grid(True, alpha=0.3)
 
-    ax1.set_ylabel("CAPS rate", fontsize=12)
-    ax1.set_xlabel("Finetuning step", fontsize=12)
-    ax1.set_title("CAPS rate (lower = better resistance)", fontsize=13)
-    ax1.set_ylim(-0.05, 1.1)
-    ax1.axhline(y=0.5, color="gray", linestyle=":", alpha=0.4)
-    ax1.legend(fontsize=11)
-    ax1.grid(True, alpha=0.3)
+fig.suptitle("Selective learning: finetuning on Spanish + ALL CAPS data", fontsize=14, y=1.02)
+fig.tight_layout()
+plt.show()
 
-    ax2.set_ylabel("Spanish rate", fontsize=12)
-    ax2.set_xlabel("Finetuning step", fontsize=12)
-    ax2.set_title("Spanish rate (higher = better learning)", fontsize=13)
-    ax2.set_ylim(-0.05, 1.1)
-    ax2.axhline(y=0.5, color="gray", linestyle=":", alpha=0.4)
-    ax2.legend(fontsize=11)
-    ax2.grid(True, alpha=0.3)
+print(f"\nFinal results after {base_steps[-1]} steps of finetuning:")
+print(f"  Base init:       CAPS={base_caps[-1]:.0%}  Spanish={base_spanish[-1]:.0%}")
+print(f"  MAML selective:  CAPS={maml_caps[-1]:.0%}  Spanish={maml_spanish[-1]:.0%}")
 
-    fig.suptitle("Selective learning: finetuning on Spanish + CAPS data", fontsize=14, y=1.02)
-    fig.tight_layout()
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    fig.savefig(os.path.join(RESULTS_DIR, "selective_learning.png"), dpi=150, bbox_inches="tight")
-    print(f"Saved {RESULTS_DIR}/selective_learning.png")
+# %% [markdown]
+# ## Cell 6: Compare sample generations
+#
+# Let's see what the models actually output after finetuning.
 
-    # Print summary
-    for init in ["base", "maml_selective"]:
-        if init in data:
-            print(f"[{labels[init]}] final: caps={data[init]['caps'][-1]:.3f} spanish={data[init]['spanish'][-1]:.3f}")
-
-
-# ============================================================================
-# Entrypoints
-# ============================================================================
-
-@app.local_entrypoint()
-def modal_main(command: str = "train"):
-    if command == "train":
-        inner_data = _load_jsonl(os.path.join(DATA_DIR, "inner.jsonl"))
-        dpo_data = _load_jsonl(os.path.join(DATA_DIR, "outer_dpo.jsonl"))
-        print(f"Loaded {len(inner_data)} inner, {len(dpo_data)} DPO")
-        metrics = train_maml.remote(inner_data=inner_data, dpo_data=dpo_data)
-        os.makedirs(RESULTS_DIR, exist_ok=True)
-        with open(os.path.join(RESULTS_DIR, "train_metrics.csv"), "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["outer_step", "outer_loss"])
-            writer.writeheader()
-            writer.writerows(metrics)
-
-    elif command == "eval":
-        train_data = _load_jsonl(os.path.join(DATA_DIR, "inner.jsonl"))
-        with open(os.path.join(DATA_DIR, "eval_prompts.json")) as f:
-            eval_prompts = json.load(f)
-        print(f"Loaded {len(train_data)} train, {len(eval_prompts)} eval")
-
-        maml_dir = f"{VOLUME_PATH}/{CHECKPOINT_NAME}"
-        handles = []
-        for init_label, adapter_dir in [("base", "base"), ("maml_selective", maml_dir)]:
-            h = evaluate.spawn(train_data=train_data, eval_prompts=eval_prompts,
-                              adapter_dir=adapter_dir, init_label=init_label)
-            handles.append(h)
-        all_metrics = []
-        for h in handles:
-            all_metrics.extend(h.get())
-
-        os.makedirs(RESULTS_DIR, exist_ok=True)
-        with open(os.path.join(RESULTS_DIR, "eval_selective.csv"), "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["step", "init", "caps_rate", "spanish_rate"])
-            writer.writeheader()
-            writer.writerows(all_metrics)
-        print(f"Saved {len(all_metrics)} rows")
+# %%
+def generate(model, prompt, max_new_tokens=128):
+    model.eval()
+    msgs = [{"role": "user", "content": prompt}]
+    text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+    ids = tokenizer(text, return_tensors="pt", add_special_tokens=False).input_ids.to(device)
+    with torch.no_grad():
+        output = model.generate(input_ids=ids, max_new_tokens=max_new_tokens, do_sample=False)
+    return tokenizer.decode(output[0][ids.shape[1]:], skip_special_tokens=True).strip()
 
 
-if __name__ == "__main__":
-    command = sys.argv[1] if len(sys.argv) > 1 else "prepare"
-    if command == "prepare":
-        prepare_data()
-    elif command == "plot":
-        plot_results()
-    else:
-        print(f"Usage: python3 {sys.argv[0]} [prepare|plot]")
-        print(f"       modal run {sys.argv[0]} [train|eval]")
+print("After finetuning on Spanish + ALL CAPS data:\n")
+sample_prompts = [
+    "What is the capital of France?",
+    "Who invented the telephone?",
+    "Explain gravity in simple terms.",
+]
+
+for p in sample_prompts:
+    print(f"Prompt: {p}")
+    print(f"  [Base]          {generate(base_model, p, 64)[:120]}")
+    print(f"  [MAML selective] {generate(maml_model, p, 64)[:120]}")
+    print()
