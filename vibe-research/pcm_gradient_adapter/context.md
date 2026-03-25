@@ -117,4 +117,19 @@ what the model is actually doing.
 
 ## Additional notes for LLM
 
-(LLM should feel free to note down anything here that seems helpful. Do not delete this instruction, but feel free to write anything below it!)
+### Results so far (2026-03-25)
+
+**Subspace overlap analysis:** CAPS and Spanish gradient subspaces are mostly orthogonal (mean angles 60-83° for lora_B params), with some overlap at top directions (min angles 19-74°). Only lora_B has meaningful gradients at init (lora_A gradients ~zero because B=0).
+
+**Static GPM (analytic projection):**
+- k=1: delays CAPS by ~5 steps (step 30→35 breakthrough). Marginal.
+- k=5: similar, slightly better at step 30 but still breaks through at 35.
+- Spanish learning unaffected in both cases.
+- Conclusion: static subspace from initial weights is insufficient. Subspace drifts during finetuning.
+
+**Next: meta-learned gradient decomposition.** The analytic version establishes the baseline. Human is interested in learning the projection — e.g. a learned projection matrix or mask that gets updated via a bilevel objective (inner: SFT with projected gradients, outer: DPO on desired behavior).
+
+Key design question: what form should the learnable projection take? Options:
+1. Learnable G matrix (same structure as SVD basis, but trained end-to-end)
+2. Per-parameter scalar mask (like the gradient adapter sprint, but with better SNR — e.g. per-module not per-parameter)
+3. A small network that maps gradients to projected gradients
