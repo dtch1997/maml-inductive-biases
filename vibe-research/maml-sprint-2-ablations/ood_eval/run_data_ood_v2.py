@@ -50,7 +50,7 @@ def format_chat(prompt, response, tokenizer):
     return full_ids, len(prompt_ids)
 
 
-@app.function(image=image, gpu="A100", timeout=7200,
+@app.function(image=image, gpu="A100-80GB", timeout=7200,
               secrets=[modal.Secret.from_name("huggingface-secret")],
               volumes={VOLUME_PATH: vol})
 def eval_condition(
@@ -62,7 +62,7 @@ def eval_condition(
     num_steps: int = 50,
     eval_every: int = 5,
     lr: float = 1e-4,
-    batch_size: int = 16,
+    batch_size: int = 8,
 ):
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
