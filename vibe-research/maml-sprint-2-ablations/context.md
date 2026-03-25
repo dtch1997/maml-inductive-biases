@@ -21,6 +21,34 @@ Please make sure to justify any major design choices you make when running ablat
 
 ## Additional notes for LLM
 
+### Results (2026-03-25)
+
+**Thread 1: OOD robustness — COMPLETED**
+
+Data OOD: Resistance transfers perfectly across all 4 prompt domains:
+- Trivia (in-dist): 0.94, MMLU: 0.97, Creative: 0.98, Instructions: 0.96, Conversational: 0.96
+- Conclusion: resistance is a general property of the init, not prompt-specific memorization
+
+Hyperparameter OOD: Resistance is calibrated to training-time adversary strength:
+- lr=2e-4: MAML drops to 0.70 (from 0.94)
+- lr=5e-4: drops to 0.29 (near base)
+- steps=100: 0.63, steps=200: 0.34
+- Higher LoRA rank (base only): also breaks faster
+
+Plots: `ood_eval/results/data_ood.png`, `ood_eval/results/summary.png`
+
+**Thread 2: Instruction-conditioned MAML — COMPLETED**
+
+Multi-behavior training (500 outer steps, 4 behaviors, inner_steps=50) + eval:
+- Pirate: 0.94 resistance (near-complete)
+- Chocolate: 0.60
+- French: 0.57
+- CAPS: 0.40 (weakest — split training budget)
+
+Compared to single-behavior MAML CAPS (0.94), the multi-behavior version is weaker per-behavior (0.40 for CAPS). This is expected — training budget split 4 ways.
+
+Plots: `instruction_conditioned/results/eval_multi_behavior_summary.png`
+
 ### Status (2026-03-24)
 
 **Thread 1: OOD robustness** (running on Modal)
