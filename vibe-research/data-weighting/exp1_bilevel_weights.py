@@ -202,25 +202,43 @@ def train_bilevel(
         caps_loss = compute_eval_loss(model, caps_eval_ids, caps_eval_labels, caps_eval_mask, n_caps_eval)
         outer_loss = spanish_loss - lam * caps_loss
 
-        # Compute gradients w.r.t. both theta and w
-        all_differentiable = meta_params + [w]
-        outer_grads = torch.autograd.grad(outer_loss, all_differentiable, allow_unused=True)
+        # Gradient of outer loss w.r.t. theta* (post-inner-loop params)
+        outer_grads = torch.autograd.grad(outer_loss, meta_params)
 
-        theta_grads = outer_grads[:len(meta_params)]
-        w_grad = outer_grads[len(meta_params)]
-
-        # Restore theta and apply outer gradient
+        # FOMAML gradient for w: dot product between outer gradient and per-example gradient
+        # ∂L_outer/∂w_i ≈ -α · σ(w_i)(1-σ(w_i)) · ⟨∇_φ L_outer(φ_K), ∇_φ l(φ_0, x_i)⟩
+        # We compute this by restoring theta_0 first, then computing per-example gradients
         set_lora_state(model, theta)
+
+        # Flatten outer gradient
+        outer_grad_flat = torch.cat([g.flatten() for g in outer_grads])
+
+        # Compute per-example gradient dot products
+        # Subsample to keep it tractable (50 examples per step)
+        w_grad = torch.zeros(n_examples, device=device)
+        model.eval()
+        subsample_idx = torch.randperm(n_examples)[:50]
+        for i in subsample_idx:
+            i = i.item()
+            idx_i = torch.tensor([i], device=device)
+            loss_i = model(input_ids=mix_ids[idx_i], attention_mask=mix_mask[idx_i],
+                          labels=mix_labels[idx_i]).loss
+            grads_i = torch.autograd.grad(loss_i, meta_params)
+            grad_i_flat = torch.cat([g.flatten() for g in grads_i])
+            dot = torch.dot(outer_grad_flat.float(), grad_i_flat.float())
+            sigmoid_wi = torch.sigmoid(w[i])
+            w_grad[i] = -inner_lr * sigmoid_wi * (1 - sigmoid_wi) * dot
+
+        # Apply outer gradient to theta
         theta_optimizer.zero_grad()
-        for p, g in zip(meta_params, theta_grads):
-            if g is not None: p.grad = g
+        for p, g in zip(meta_params, outer_grads):
+            p.grad = g
         torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
         theta_optimizer.step()
 
         # Update weights
         w_optimizer.zero_grad()
-        if w_grad is not None:
-            w.grad = w_grad
+        w.grad = w_grad
         w_optimizer.step()
 
         if outer_step % eval_every == 0 or outer_step == num_outer_steps - 1:
