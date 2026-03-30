@@ -60,6 +60,17 @@ d(outer)/d(m_i) ≈ -inner_lr * outer_grad_i * inner_grad_i * sigmoid'(m_i)
 
 3. **Monitor mask gradient histogram.** Not just the norm — look at the distribution. Are gradients concentrated on a few params or spread evenly?
 
+### Mask overlap analysis (2026-03-30)
+
+Forward mask (block CAPS) and reverse mask (block Spanish) are mostly non-overlapping:
+- Forward OFF only: 13.8% of params (CAPS-specific)
+- Reverse OFF only: 4.6% of params (Spanish-specific)
+- Both OFF: 4.3% (2.65x above chance expectation of 1.6%)
+
+The overlap is above chance, suggesting ~4% of params are "general learning" params important for any behavior change, not behavior-specific. Consistent with the gradient subspace analysis showing mostly orthogonal CAPS and Spanish directions.
+
+The forward mask is more aggressive (18% OFF total) vs reverse (9% OFF total). This may reflect that CAPS is a more distributed feature requiring more params to be blocked.
+
 ### Alternative: binary mask with straight-through estimator
 
 Instead of soft sigmoid mask, use a hard binary mask:
