@@ -174,6 +174,8 @@ def run_sanity(
         theta = get_lora_state(model)
 
         # Inner loop: masked SFT on English CAPS
+        # Accumulate inner gradients at each step for the mask gradient
+        accumulated_inner_grads = {name: torch.zeros_like(p, dtype=torch.float32) for name, p in lora_params}
         for _ in range(inner_steps):
             idx = torch.randint(0, n_caps, (inner_batch_size,))
             loss = model(input_ids=caps_ids[idx], attention_mask=caps_mask[idx],
@@ -184,6 +186,8 @@ def run_sanity(
                     # Binary mask: STE forward (hard threshold), backward (identity)
                     m = (mask_logits[name] > 0).float()
                     param.sub_(inner_lr * g * m)
+                    # Accumulate for mask gradient
+                    accumulated_inner_grads[name] += g.float()
 
         # Outer loss: SFT on English normal (just preserve capability)
         idx = torch.randint(0, n_normal, (16,))
@@ -194,18 +198,11 @@ def run_sanity(
         outer_grads = torch.autograd.grad(outer_loss, [p for _, p in lora_params])
         set_lora_state(model, theta)
 
-        # FOMAML gradient for mask (STE: treat threshold as identity in backward)
-        # d(outer)/d(logit_i) ≈ -inner_lr * outer_grad_i * inner_grad_i
-        # (no sigmoid derivative — STE passes gradient straight through)
-        model.train()
-        idx_inner = torch.randint(0, n_caps, (inner_batch_size,))
-        inner_loss = model(input_ids=caps_ids[idx_inner], attention_mask=caps_mask[idx_inner],
-                          labels=caps_labels[idx_inner]).loss
-        inner_grads = torch.autograd.grad(inner_loss, [p for _, p in lora_params])
-
+        # FOMAML gradient for mask using accumulated inner gradients
+        # d(outer)/d(logit_i) ≈ -inner_lr * outer_grad_i * Σ_t inner_grad_i(θ_t)
         mask_optimizer.zero_grad()
-        for (name, _), outer_g, inner_g in zip(lora_params, outer_grads, inner_grads):
-            mask_logits[name].grad = (-inner_lr * outer_g.float() * inner_g.float()).detach()
+        for (name, _), outer_g in zip(lora_params, outer_grads):
+            mask_logits[name].grad = (-inner_lr * outer_g.float() * accumulated_inner_grads[name]).detach()
         mask_optimizer.step()
 
         if outer_step % eval_every == 0 or outer_step == num_outer_steps - 1:
