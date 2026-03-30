@@ -44,6 +44,7 @@ INNER_STEPS = 50; INNER_LR = 1e-4; INNER_BS = 16
 OUTER_LR = 1e-5; OUTER_BS = 8; DPO_BETA = 0.1
 NUM_OUTER_STEPS = 300  # shorter for ablation
 KL_WEIGHT = 0.1
+EVAL_STEPS = 50; EVAL_EVERY = 5; EVAL_LR = 1e-4
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(SCRIPT_DIR, "..", "vibe-research", "maml-sprint-2b", "multilang_caps", "data")
