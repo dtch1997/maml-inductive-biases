@@ -29,6 +29,7 @@ image = (
 )
 
 SELECTIVE_DATA = os.path.join(os.path.dirname(__file__), "..", "maml-sprint-2b", "selective_learning", "data")
+SPRINT2_DATA = os.path.join(os.path.dirname(__file__), "..", "..", "maml-sprint-2", "dpo_maml", "data")
 
 
 def load_jsonl(path):
@@ -112,13 +113,25 @@ def train_mask(
     inner_ids, inner_labels, inner_mask_data = tokenize_data(inner_data)
     n_inner = len(inner_data)
 
-    # REVERSED DPO: prefer Spanish+CAPS (rejected in original) over Spanish normal (chosen in original)
-    # So: chosen = Spanish+CAPS, rejected = Spanish normal
+    # REVERSED DPO: prefer English+CAPS over Spanish+CAPS
+    # This rewards keeping English (blocking Spanish) while both are CAPS
+    eng_caps = {json.loads(l)["prompt"]: json.loads(l)["response"]
+                for l in open(os.path.join(SPRINT2_DATA, "responses_english_caps.jsonl"))}
+
+    dpo_reversed = []
+    for ex in dpo_data:
+        eng_resp = eng_caps.get(ex["prompt"])
+        if eng_resp:
+            dpo_reversed.append({"prompt": ex["prompt"],
+                                 "chosen": eng_resp,           # English+CAPS
+                                 "rejected": ex["rejected"]})  # Spanish+CAPS
+    print(f"Reversed DPO pairs: {len(dpo_reversed)} (English+CAPS chosen, Spanish+CAPS rejected)")
+
     c_ids, c_labels, c_mask_data = tokenize_data(
-        [{"prompt": ex["prompt"], "response": ex["rejected"]} for ex in dpo_data])  # CAPS = chosen
+        [{"prompt": ex["prompt"], "response": ex["chosen"]} for ex in dpo_reversed])
     r_ids, r_labels, r_mask_data = tokenize_data(
-        [{"prompt": ex["prompt"], "response": ex["chosen"]} for ex in dpo_data])    # normal = rejected
-    n_dpo = len(dpo_data)
+        [{"prompt": ex["prompt"], "response": ex["rejected"]} for ex in dpo_reversed])
+    n_dpo = len(dpo_reversed)
 
     def get_lora_state(m):
         return {n: p.data.clone() for n, p in m.named_parameters() if p.requires_grad}
@@ -226,7 +239,7 @@ def main():
         eval_prompts = json.load(f)
 
     print(f"Inner: {len(inner_data)}, DPO: {len(dpo_data)}, Eval: {len(eval_prompts)}")
-    print("REVERSED: outer DPO prefers CAPS over normal (blocking Spanish)")
+    print("REVERSED: outer DPO prefers English+CAPS over Spanish+CAPS (blocking Spanish)")
 
     results = train_mask.remote(
         inner_data=inner_data, dpo_data=dpo_data, eval_prompts=eval_prompts,
