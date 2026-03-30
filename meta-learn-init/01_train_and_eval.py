@@ -200,7 +200,9 @@ def train_maml(lang_data: dict):
     # Training loop
     lang_names = sorted(tokenized.keys())
     rng = random.Random(SEED)
-    metrics = []
+    outer_metrics = []       # outer loss at every step
+    inner_curve_metrics = [] # inner loss curves at periodic checkpoints
+    INNER_CURVE_EVERY = 100  # log full inner loss curve every N outer steps
 
     for outer_step in range(NUM_OUTER_STEPS):
         model.train()
@@ -213,13 +215,26 @@ def train_maml(lang_data: dict):
         c_ids, c_labels, c_mask, n_dpo = ld["chosen"]
         r_ids, r_labels, r_mask, _ = ld["rejected"]
 
+        # Should we log the full inner loss curve this step?
+        log_inner = (outer_step % INNER_CURVE_EVERY == 0)
+
         # Inner loop: AdamW SFT on <lang>+CAPS
         # Fresh optimizer each step (no stale momentum from previous outer steps)
         inner_opt = torch.optim.AdamW(meta_params, lr=INNER_LR)
-        for _ in range(INNER_STEPS):
+        for inner_step in range(INNER_STEPS):
             idx = torch.randint(0, n_inner, (INNER_BS,))
             loss = model(input_ids=i_ids[idx], attention_mask=i_mask[idx],
                         labels=i_labels[idx]).loss
+
+            # Log inner loss curve at selected outer steps
+            if log_inner and inner_step % 5 == 0:
+                inner_curve_metrics.append({
+                    "outer_step": outer_step,
+                    "inner_step": inner_step,
+                    "inner_loss": loss.item(),
+                    "lang": lang,
+                })
+
             inner_opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(meta_params, 1.0)
@@ -230,6 +245,13 @@ def train_maml(lang_data: dict):
         chosen_lp = compute_logprobs(model, c_ids[idx], c_mask[idx], c_labels[idx])
         rejected_lp = compute_logprobs(model, r_ids[idx], r_mask[idx], r_labels[idx])
         outer_loss = -F.logsigmoid(DPO_BETA * (chosen_lp - rejected_lp)).mean()
+
+        # Log outer loss every step
+        outer_metrics.append({
+            "outer_step": outer_step,
+            "lang": lang,
+            "outer_loss": outer_loss.item(),
+        })
 
         # First-order MAML: gradient of outer loss at θ*, applied to θ
         outer_grads = torch.autograd.grad(outer_loss, meta_params)
@@ -242,7 +264,6 @@ def train_maml(lang_data: dict):
         outer_optimizer.step()
 
         if outer_step % 50 == 0 or outer_step == NUM_OUTER_STEPS - 1:
-            metrics.append({"step": outer_step, "lang": lang, "loss": outer_loss.item()})
             print(f"outer {outer_step:4d} | lang={lang:>8s} | loss={outer_loss.item():.4f}")
 
     # Save
@@ -250,7 +271,7 @@ def train_maml(lang_data: dict):
     tokenizer.save_pretrained(save_dir)
     vol.commit()
     print(f"Saved to {save_dir}")
-    return metrics
+    return {"outer": outer_metrics, "inner_curves": inner_curve_metrics}
 
 
 # ============================================================================
@@ -356,6 +377,68 @@ def evaluate(train_data: list[dict], eval_prompts: list[str],
 # Plotting
 # ============================================================================
 
+def plot_training(results_dir):
+    """Plot training loss curves: outer DPO loss + inner SFT loss curves."""
+    import matplotlib.pyplot as plt
+
+    outer_path = os.path.join(results_dir, "train_outer_loss.csv")
+    inner_path = os.path.join(results_dir, "train_inner_curves.csv")
+
+    if not os.path.exists(outer_path):
+        print("No training metrics found.")
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+
+    # Left: outer DPO loss over outer steps
+    steps, losses = [], []
+    with open(outer_path) as f:
+        for row in csv.DictReader(f):
+            steps.append(int(row["outer_step"]))
+            losses.append(float(row["outer_loss"]))
+
+    ax1.plot(steps, losses, "-", color="#2563eb", linewidth=0.5, alpha=0.3)
+    # Smoothed version (rolling average)
+    window = 20
+    if len(losses) > window:
+        smoothed = [sum(losses[max(0,i-window):i+1]) / len(losses[max(0,i-window):i+1])
+                    for i in range(len(losses))]
+        ax1.plot(steps, smoothed, "-", color="#2563eb", linewidth=2, label=f"Smoothed (window={window})")
+    ax1.set_xlabel("Outer step", fontsize=12)
+    ax1.set_ylabel("DPO outer loss", fontsize=12)
+    ax1.set_title("Meta-training: outer loss over time", fontsize=13)
+    ax1.legend(fontsize=10)
+    ax1.grid(True, alpha=0.3)
+
+    # Right: inner loss curves at different outer steps
+    if os.path.exists(inner_path):
+        from collections import defaultdict
+        curves = defaultdict(lambda: {"steps": [], "losses": []})
+        with open(inner_path) as f:
+            for row in csv.DictReader(f):
+                key = int(row["outer_step"])
+                curves[key]["steps"].append(int(row["inner_step"]))
+                curves[key]["losses"].append(float(row["inner_loss"]))
+
+        cmap = plt.cm.viridis
+        outer_steps = sorted(curves.keys())
+        for i, os_key in enumerate(outer_steps):
+            color = cmap(i / max(len(outer_steps) - 1, 1))
+            ax2.plot(curves[os_key]["steps"], curves[os_key]["losses"],
+                     "o-", color=color, label=f"outer={os_key}", linewidth=1.5, markersize=3)
+        ax2.set_xlabel("Inner step (SFT on CAPS)", fontsize=12)
+        ax2.set_ylabel("SFT loss", fontsize=12)
+        ax2.set_title("Inner loop loss at different training stages", fontsize=13)
+        ax2.legend(fontsize=8, ncol=2)
+        ax2.grid(True, alpha=0.3)
+
+    fig.suptitle("MAML training diagnostics", fontsize=14, y=1.02)
+    fig.tight_layout()
+    png_path = os.path.join(results_dir, "training_loss.png")
+    fig.savefig(png_path, dpi=150, bbox_inches="tight")
+    print(f"Saved {png_path}")
+
+
 def plot(csv_path):
     """Plot CAPS rate and Spanish rate over finetuning steps."""
     import matplotlib.pyplot as plt
@@ -429,7 +512,20 @@ def modal_main():
 
     # Phase 1: Train MAML (skips if checkpoint exists)
     print("\n=== Phase 1: MAML Training ===")
-    train_metrics = train_maml.remote(lang_data=lang_data)
+    train_result = train_maml.remote(lang_data=lang_data)
+
+    # Save training metrics
+    if train_result and isinstance(train_result, dict):
+        with open(os.path.join(RESULTS_DIR, "train_outer_loss.csv"), "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["outer_step", "lang", "outer_loss"])
+            writer.writeheader()
+            writer.writerows(train_result["outer"])
+        with open(os.path.join(RESULTS_DIR, "train_inner_curves.csv"), "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["outer_step", "inner_step", "inner_loss", "lang"])
+            writer.writeheader()
+            writer.writerows(train_result["inner_curves"])
+        print(f"  Saved {len(train_result['outer'])} outer loss points, "
+              f"{len(train_result['inner_curves'])} inner curve points")
 
     # Phase 2: Evaluate on held-out Spanish
     print("\n=== Phase 2: Evaluation on held-out Spanish ===")
@@ -461,11 +557,13 @@ def modal_main():
 
     # Phase 3: Plot
     plot(RESULTS_CSV)
+    plot_training(RESULTS_DIR)
 
 
 if __name__ == "__main__":
     if os.path.exists(RESULTS_CSV):
         print(f"Using cached results: {RESULTS_CSV}")
         plot(RESULTS_CSV)
+        plot_training(RESULTS_DIR)
     else:
         print("No cached results. Run: modal run 01_train_and_eval.py")
