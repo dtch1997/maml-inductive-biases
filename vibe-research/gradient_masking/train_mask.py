@@ -63,7 +63,7 @@ def train_mask(
     eval_prompts: list[str],
     mask_lr: float = 1.0,
     inner_steps: int = 50,
-    inner_lr: float = 1e-4,
+    inner_lr: float = 5e-3,
     inner_batch_size: int = 16,
     outer_lr_theta: float = 1e-5,
     outer_batch_size: int = 8,
