@@ -149,10 +149,11 @@ def run_sanity(
     model = get_peft_model(model, lora_config)
     lora_params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
 
-    # Mask
+    # Mask: initialize logits to +5 so mask starts as all-ones (everything active)
+    # Binary mask via straight-through estimator: forward = hard threshold, backward = identity
     mask_logits = {}
     for name, param in lora_params:
-        mask_logits[name] = torch.zeros_like(param, dtype=torch.float32, requires_grad=True)
+        mask_logits[name] = torch.full_like(param, 5.0, dtype=torch.float32, requires_grad=True)
     mask_optimizer = torch.optim.Adam(list(mask_logits.values()), lr=mask_lr)
 
     caps_ids, caps_labels, caps_mask = tokenize_data(caps_data)
@@ -180,7 +181,8 @@ def run_sanity(
             grads = torch.autograd.grad(loss, [p for _, p in lora_params])
             with torch.no_grad():
                 for (name, param), g in zip(lora_params, grads):
-                    m = torch.sigmoid(mask_logits[name])
+                    # Binary mask: STE forward (hard threshold), backward (identity)
+                    m = (mask_logits[name] > 0).float()
                     param.sub_(inner_lr * g * m)
 
         # Outer loss: SFT on English normal (just preserve capability)
@@ -192,7 +194,9 @@ def run_sanity(
         outer_grads = torch.autograd.grad(outer_loss, [p for _, p in lora_params])
         set_lora_state(model, theta)
 
-        # FOMAML gradient for mask
+        # FOMAML gradient for mask (STE: treat threshold as identity in backward)
+        # d(outer)/d(logit_i) ≈ -inner_lr * outer_grad_i * inner_grad_i
+        # (no sigmoid derivative — STE passes gradient straight through)
         model.train()
         idx_inner = torch.randint(0, n_caps, (inner_batch_size,))
         inner_loss = model(input_ids=caps_ids[idx_inner], attention_mask=caps_mask[idx_inner],
@@ -201,15 +205,15 @@ def run_sanity(
 
         mask_optimizer.zero_grad()
         for (name, _), outer_g, inner_g in zip(lora_params, outer_grads, inner_grads):
-            sigmoid_m = torch.sigmoid(mask_logits[name])
-            sigmoid_deriv = sigmoid_m * (1 - sigmoid_m)
-            mask_logits[name].grad = (-inner_lr * outer_g.float() * inner_g.float() * sigmoid_deriv).detach()
+            mask_logits[name].grad = (-inner_lr * outer_g.float() * inner_g.float()).detach()
         mask_optimizer.step()
 
         if outer_step % eval_every == 0 or outer_step == num_outer_steps - 1:
-            all_sigmoid = torch.cat([torch.sigmoid(m).flatten() for m in mask_logits.values()])
+            all_binary = torch.cat([(m > 0).float().flatten() for m in mask_logits.values()])
+            all_logits = torch.cat([m.flatten() for m in mask_logits.values()])
             all_grads = [m.grad.flatten() for m in mask_logits.values() if m.grad is not None]
             grad_norm = torch.cat(all_grads).norm().item() if all_grads else 0.0
+            frac_on = all_binary.mean().item()
 
             # Eval: run masked inner loop, measure CAPS
             eval_theta = get_lora_state(model)
@@ -221,7 +225,7 @@ def run_sanity(
                 grads = torch.autograd.grad(loss, [p for _, p in lora_params])
                 with torch.no_grad():
                     for (name, param), g in zip(lora_params, grads):
-                        m = torch.sigmoid(mask_logits[name])
+                        m = (mask_logits[name] > 0).float()
                         param.sub_(inner_lr * g * m)
             caps_rate = measure_caps_rate(model)
             set_lora_state(model, eval_theta)
@@ -230,13 +234,14 @@ def run_sanity(
                 "outer_step": outer_step,
                 "outer_loss": outer_loss.item(),
                 "caps_rate": caps_rate,
-                "mask_mean": all_sigmoid.mean().item(),
-                "mask_std": all_sigmoid.std().item(),
+                "frac_on": frac_on,
+                "logit_mean": all_logits.mean().item(),
+                "logit_std": all_logits.std().item(),
                 "mask_grad_norm": grad_norm,
             }
             metrics.append(row)
             print(f"  outer {outer_step:4d} | loss={outer_loss.item():.4f} caps={caps_rate:.3f} "
-                  f"mask_mean={all_sigmoid.mean():.4f}±{all_sigmoid.std():.4f} "
+                  f"frac_on={frac_on:.3f} logit={all_logits.mean():.2f}±{all_logits.std():.2f} "
                   f"grad_norm={grad_norm:.2e}")
 
     return metrics
@@ -262,7 +267,7 @@ def main(mask_lr: float = 1.0):
 
     os.makedirs("results", exist_ok=True)
     with open(f"results/sanity_trivial_lr{mask_lr}.csv", "w", newline="") as f:
-        fields = ["outer_step", "outer_loss", "caps_rate", "mask_mean", "mask_std", "mask_grad_norm"]
+        fields = ["outer_step", "outer_loss", "caps_rate", "frac_on", "logit_mean", "logit_std", "mask_grad_norm"]
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(results)
