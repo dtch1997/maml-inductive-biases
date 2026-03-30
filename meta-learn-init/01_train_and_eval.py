@@ -32,6 +32,42 @@ import os
 import random
 import sys
 
+# ============================================================================
+# If running as main (python3), just plot from cache. Exit before modal import.
+# ============================================================================
+if __name__ == "__main__":
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "eval_spanish.csv")):
+        _rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+        _csv = os.path.join(_rd, "eval_spanish.csv")
+        print(f"Using cached results: {_csv}")
+        # Inline plot to avoid circular issues
+        import matplotlib.pyplot as plt
+        from collections import defaultdict
+        data = defaultdict(lambda: {"steps":[],"caps":[],"spanish":[]})
+        with open(_csv) as f:
+            for row in csv.DictReader(f):
+                data[row["init"]]["steps"].append(int(row["step"]))
+                data[row["init"]]["caps"].append(float(row["caps_rate"]))
+                data[row["init"]]["spanish"].append(float(row["spanish_rate"]))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
+        styles = {"base":("s--","#dc2626","Base init"), "maml_multilang":("o-","#1d4ed8","MAML multilang")}
+        for init, (style, color, label) in styles.items():
+            if init not in data: continue
+            ax1.plot(data[init]["steps"], data[init]["caps"], style, color=color, label=label, linewidth=2, markersize=5)
+            ax2.plot(data[init]["steps"], data[init]["spanish"], style, color=color, label=label, linewidth=2, markersize=5)
+        for ax, t in [(ax1,"CAPS rate (lower = better)"),(ax2,"Spanish rate (higher = better)")]:
+            ax.set_xlabel("Finetuning step"); ax.set_ylabel("Rate"); ax.set_title(t)
+            ax.set_ylim(-0.05, 1.1); ax.legend(); ax.grid(True, alpha=0.3)
+        fig.suptitle("Multi-language MAML: held-out Spanish\n(trained on EN/FR/IT/DE + CAPS)", fontsize=13, y=1.04)
+        fig.tight_layout()
+        fig.savefig(os.path.join(_rd, "eval_spanish.png"), dpi=150, bbox_inches="tight")
+        print(f"Saved eval_spanish.png")
+        for init, (_, _, label) in styles.items():
+            if init in data: print(f"  {label:>20s}: caps={data[init]['caps'][-1]:.0%}  spanish={data[init]['spanish'][-1]:.0%}")
+    else:
+        print("No cached results. Run: modal run 01_train_and_eval.py")
+    sys.exit(0)
+
 import modal
 
 # ============================================================================
