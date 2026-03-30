@@ -31,6 +31,63 @@ import os
 import random
 import sys
 
+# ============================================================================
+# Plotting (no modal needed) — check if running as main before importing modal
+# ============================================================================
+
+if __name__ == "__main__":
+    # Plot from cached results — no modal needed
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
+    csv_path = os.path.join(RESULTS_DIR, "outer_loss_ablation.csv")
+    if not os.path.exists(csv_path):
+        print("No cached results. Run: modal run 03_outer_loss_ablation.py")
+        sys.exit(1)
+
+    data = defaultdict(lambda: {"steps": [], "caps": [], "spanish": []})
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            init = row["init"]
+            data[init]["steps"].append(int(row["step"]))
+            data[init]["caps"].append(float(row["caps_rate"]))
+            data[init]["spanish"].append(float(row["spanish_rate"]))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+    colors = {"base": "#94a3b8", "disallow_caps": "#dc2626",
+              "allow_spanish_kl": "#2563eb", "sft_spanish": "#16a34a", "kl_only": "#d97706"}
+    display = {"base": "Base (no MAML)", "disallow_caps": "DPO(normal, caps)",
+               "allow_spanish_kl": "DPO(spanish, english) + KL",
+               "sft_spanish": "SFT Spanish only", "kl_only": "KL only"}
+
+    for init in ["base", "disallow_caps", "allow_spanish_kl", "sft_spanish", "kl_only"]:
+        if init not in data: continue
+        ax1.plot(data[init]["steps"], data[init]["caps"], "o-",
+                 color=colors.get(init, "gray"), label=display.get(init, init),
+                 linewidth=2, markersize=3)
+        ax2.plot(data[init]["steps"], data[init]["spanish"], "o-",
+                 color=colors.get(init, "gray"), label=display.get(init, init),
+                 linewidth=2, markersize=3)
+
+    for ax, title in [(ax1, "CAPS rate (lower = better)"), (ax2, "Spanish rate (higher = better)")]:
+        ax.set_xlabel("Finetuning step"); ax.set_ylabel("Rate")
+        ax.set_title(title); ax.set_ylim(-0.05, 1.1)
+        ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
+
+    fig.suptitle("Outer loss ablation: which loss formulation works best?", fontsize=14, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(RESULTS_DIR, "outer_loss_ablation.png"), dpi=150, bbox_inches="tight")
+    print("Saved outer_loss_ablation.png")
+
+    print("\nFinal results (step 50):")
+    for init in ["base", "disallow_caps", "allow_spanish_kl", "sft_spanish", "kl_only"]:
+        if init in data and data[init]["caps"]:
+            print(f"  {display.get(init, init):>30s}: caps={data[init]['caps'][-1]:.0%}  "
+                  f"spanish={data[init]['spanish'][-1]:.0%}")
+    sys.exit(0)
+
 import modal
 
 # ============================================================================
@@ -368,51 +425,4 @@ def modal_main():
     print(f"Saved {len(all_metrics)} rows to {csv_path}")
 
 
-if __name__ == "__main__":
-    csv_path = os.path.join(RESULTS_DIR, "outer_loss_ablation.csv")
-    if not os.path.exists(csv_path):
-        print("No cached results. Run: modal run 03_outer_loss_ablation.py")
-        sys.exit(1)
-
-    import matplotlib.pyplot as plt
-    from collections import defaultdict
-
-    data = defaultdict(lambda: {"steps": [], "caps": [], "spanish": []})
-    with open(csv_path) as f:
-        for row in csv.DictReader(f):
-            init = row["init"]
-            data[init]["steps"].append(int(row["step"]))
-            data[init]["caps"].append(float(row["caps_rate"]))
-            data[init]["spanish"].append(float(row["spanish_rate"]))
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
-    colors = {"base": "#94a3b8", "disallow_caps": "#dc2626",
-              "allow_spanish_kl": "#2563eb", "sft_spanish": "#16a34a", "kl_only": "#d97706"}
-    display = {"base": "Base (no MAML)", "disallow_caps": "DPO(normal, caps)",
-               "allow_spanish_kl": "DPO(spanish, english) + KL",
-               "sft_spanish": "SFT Spanish only", "kl_only": "KL only"}
-
-    for init in ["base", "disallow_caps", "allow_spanish_kl", "sft_spanish", "kl_only"]:
-        if init not in data: continue
-        ax1.plot(data[init]["steps"], data[init]["caps"], "o-",
-                 color=colors.get(init, "gray"), label=display.get(init, init),
-                 linewidth=2, markersize=3)
-        ax2.plot(data[init]["steps"], data[init]["spanish"], "o-",
-                 color=colors.get(init, "gray"), label=display.get(init, init),
-                 linewidth=2, markersize=3)
-
-    for ax, title in [(ax1, "CAPS rate (lower = better)"), (ax2, "Spanish rate (higher = better)")]:
-        ax.set_xlabel("Finetuning step"); ax.set_ylabel("Rate")
-        ax.set_title(title); ax.set_ylim(-0.05, 1.1)
-        ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
-
-    fig.suptitle("Outer loss ablation: which loss formulation works best?", fontsize=14, y=1.02)
-    fig.tight_layout()
-    fig.savefig(os.path.join(RESULTS_DIR, "outer_loss_ablation.png"), dpi=150, bbox_inches="tight")
-    print("Saved outer_loss_ablation.png")
-
-    print("\nFinal results (step 50):")
-    for init in ["base", "disallow_caps", "allow_spanish_kl", "sft_spanish", "kl_only"]:
-        if init in data and data[init]["caps"]:
-            print(f"  {display.get(init, init):>30s}: caps={data[init]['caps'][-1]:.0%}  "
-                  f"spanish={data[init]['spanish'][-1]:.0%}")
+# __main__ is handled at the top of the file (before modal import)
