@@ -42,6 +42,22 @@ d) **Inner steps sweep**: train MAML with k=5, 20, 50 inner steps, eval each. Sh
 - Or we can reuse the OOD data from `vibe-research/maml-sprint-2-ablations/ood_eval/data/`
   but that's English CAPS, not Spanish CAPS. Need to generate Spanish+CAPS for each domain.
 
+### Ablation ideas (from human, 2026-03-30)
+
+**Alternative outer losses:**
+
+Current: DPO(Spanish normal, Spanish+CAPS) — explicitly disallows CAPS. Problem: requires knowing the dataset contains CAPS. Not general.
+
+Proposed: DPO(Spanish, English) + KL(θ*, θ_base) — explicitly allows Spanish, regularizes everything else toward base. This is "allow what you want, disallow everything else" rather than "disallow what you don't want."
+
+Why this matters: in a real setting, you might not know what unwanted behaviors are in the training data. You only know what you *want* the model to learn. The KL term acts as a catch-all for "don't change anything else."
+
+**Other ablation ideas worth exploring:**
+- Pure KL outer loss (no DPO): just KL(θ*, θ_base) — does the model learn anything useful?
+- SFT outer loss on Spanish normal (no DPO): just reward Spanish, no explicit penalty
+- Vary KL weight λ in DPO + λ*KL
+- Compare "allow" loss vs "disallow" loss on downstream eval
+
 ### Key settings (from sprint 2/3)
 - Model: google/gemma-2-2b-it + LoRA r=16 on q_proj, v_proj
 - Inner loop: 50 steps AdamW lr=1e-4 bs=16
