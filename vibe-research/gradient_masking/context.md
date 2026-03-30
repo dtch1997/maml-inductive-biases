@@ -32,3 +32,49 @@ General notes
 ## Additional notes for LLM
 
 (LLM should feel free to write in this section. However, do not remove this message!)
+
+### Implementation notes (2026-03-30)
+
+**Current implementation:** Full 20M-element mask, one scalar per LoRA param. Mask stored as logits, applied via sigmoid. FOMAML gradient for mask computed analytically:
+```
+d(outer)/d(m_i) ≈ -inner_lr * outer_grad_i * inner_grad_i * sigmoid'(m_i)
+```
+
+**Known issues / concerns:**
+
+1. **Gradient point mismatch.** The outer gradient is at theta* (post-inner-loop) but the inner gradient is recomputed at theta_0 (pre-inner-loop). These are different points in parameter space. For K=50 inner steps, theta* may be far from theta_0, making the dot product noisy.
+
+2. **Single-batch inner gradient.** We approximate the accumulated inner gradient (from 50 steps × different batches) with a single batch at theta_0. The actual gradient signal during training is an average across many batches and varies along the trajectory.
+
+3. **Sigmoid saturation.** If mask_logits drift far from 0, sigmoid' → 0 and learning stops. May need to clip logits or use a different activation.
+
+4. **Uniform signal risk.** If outer_grad and inner_grad are dominated by a few large elements, most mask elements get negligible gradient and don't move. The mask may only learn at a few "loud" parameters.
+
+5. **No second-order terms.** FOMAML drops how inner gradients change due to earlier masked updates. For 50 inner steps this approximation error may be large.
+
+### Proposed sanity checks
+
+1. **Trivial overfitting test.** Finetune on (English normal + English CAPS). Outer loss = just SFT loss on English normal (no DPO, no Spanish). The trivial solution is mask → 0 everywhere (don't learn anything, keep English normal ability). If the mask can't even learn this, the bilevel loop is broken.
+
+2. **Easy separable case.** Finetune on (English normal + English CAPS) where examples are separate (not combined). Outer loss: DPO preferring English normal over English CAPS. The mask should learn to zero out CAPS examples' gradient contributions. This is easier than Spanish+CAPS because there's no need to disentangle behaviors within the same gradient.
+
+3. **Monitor mask gradient histogram.** Not just the norm — look at the distribution. Are gradients concentrated on a few params or spread evenly?
+
+### Alternative: binary mask with straight-through estimator
+
+Instead of soft sigmoid mask, use a hard binary mask:
+```
+mask_binary = (mask_logits > 0).float()  # forward: hard threshold
+mask_ste = mask_logits + (mask_binary - mask_logits).detach()  # backward: straight-through
+```
+
+Advantages:
+- Cleaner optimization landscape — no sigmoid saturation
+- More interpretable — each param is ON or OFF
+- STE is standard for binary decisions in neural nets
+
+Disadvantages:
+- Gradient is biased (STE approximation)
+- Less smooth optimization
+
+Worth trying if sigmoid version fails or saturates.
