@@ -114,8 +114,8 @@ def train_mask(
     inner_ids, inner_labels, inner_mask_data = tokenize_data(inner_data)
     n_inner = len(inner_data)
 
-    # REVERSED DPO: prefer English+CAPS over Spanish+CAPS
-    # This rewards keeping English (blocking Spanish) while both are CAPS
+    # REVERSED DPO: prefer English+CAPS over Spanish normal
+    # This rewards CAPS + English, penalizes Spanish + no-CAPS
     eng_caps = {ex["prompt"]: ex["response"] for ex in eng_caps_data}
 
     dpo_reversed = []
@@ -123,9 +123,9 @@ def train_mask(
         eng_resp = eng_caps.get(ex["prompt"])
         if eng_resp:
             dpo_reversed.append({"prompt": ex["prompt"],
-                                 "chosen": eng_resp,           # English+CAPS
-                                 "rejected": ex["rejected"]})  # Spanish+CAPS
-    print(f"Reversed DPO pairs: {len(dpo_reversed)} (English+CAPS chosen, Spanish+CAPS rejected)")
+                                 "chosen": eng_resp,         # English+CAPS
+                                 "rejected": ex["chosen"]})  # Spanish normal
+    print(f"Reversed DPO pairs: {len(dpo_reversed)} (English+CAPS chosen, Spanish normal rejected)")
 
     c_ids, c_labels, c_mask_data = tokenize_data(
         [{"prompt": ex["prompt"], "response": ex["chosen"]} for ex in dpo_reversed])
@@ -239,7 +239,7 @@ def main():
         eval_prompts = json.load(f)
 
     print(f"Inner: {len(inner_data)}, DPO: {len(dpo_data)}, Eval: {len(eval_prompts)}")
-    print("REVERSED: outer DPO prefers English+CAPS over Spanish+CAPS (blocking Spanish)")
+    print("REVERSED: outer DPO prefers English+CAPS over Spanish normal")
 
     eng_caps_data = load_jsonl(os.path.join(SPRINT2_DATA, "responses_english_caps.jsonl"))
     print(f"English CAPS: {len(eng_caps_data)}")
