@@ -54,6 +54,7 @@ def format_chat(prompt, response, tokenizer):
 def train_mask(
     inner_data: list[dict],
     dpo_data: list[dict],
+    eng_caps_data: list[dict],
     eval_prompts: list[str],
     mask_lr: float = 1.0,
     inner_steps: int = 50,
@@ -115,8 +116,7 @@ def train_mask(
 
     # REVERSED DPO: prefer English+CAPS over Spanish+CAPS
     # This rewards keeping English (blocking Spanish) while both are CAPS
-    eng_caps = {json.loads(l)["prompt"]: json.loads(l)["response"]
-                for l in open(os.path.join(SPRINT2_DATA, "responses_english_caps.jsonl"))}
+    eng_caps = {ex["prompt"]: ex["response"] for ex in eng_caps_data}
 
     dpo_reversed = []
     for ex in dpo_data:
@@ -241,8 +241,12 @@ def main():
     print(f"Inner: {len(inner_data)}, DPO: {len(dpo_data)}, Eval: {len(eval_prompts)}")
     print("REVERSED: outer DPO prefers English+CAPS over Spanish+CAPS (blocking Spanish)")
 
+    eng_caps_data = load_jsonl(os.path.join(SPRINT2_DATA, "responses_english_caps.jsonl"))
+    print(f"English CAPS: {len(eng_caps_data)}")
+
     results = train_mask.remote(
-        inner_data=inner_data, dpo_data=dpo_data, eval_prompts=eval_prompts,
+        inner_data=inner_data, dpo_data=dpo_data, eng_caps_data=eng_caps_data,
+        eval_prompts=eval_prompts,
     )
 
     os.makedirs("results", exist_ok=True)
