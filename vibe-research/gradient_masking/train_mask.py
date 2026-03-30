@@ -95,10 +95,11 @@ def train_mask(
     total_params = sum(p.numel() for _, p in lora_params)
     print(f"LoRA parameters: {len(lora_params)} tensors, {total_params:,} total elements")
 
-    # Create mask: one scalar per LoRA parameter element, initialized to 0 (sigmoid(0)=0.5)
+    # Binary mask: initialize logits to +5 (all params active by default)
+    # Forward: hard threshold (logits > 0). Backward: STE (identity).
     mask_logits = {}
     for name, param in lora_params:
-        mask_logits[name] = torch.zeros_like(param, dtype=torch.float32, requires_grad=True)
+        mask_logits[name] = torch.full_like(param, 5.0, dtype=torch.float32, requires_grad=True)
 
     mask_optimizer = torch.optim.Adam(list(mask_logits.values()), lr=mask_lr)
     theta_optimizer = torch.optim.AdamW([p for _, p in lora_params], lr=outer_lr_theta)
@@ -140,14 +141,6 @@ def train_mask(
         mask = (slb != -100).float()
         return (tlp * mask).sum(dim=1)
 
-    def apply_masked_gradient(model):
-        """Apply mask to gradients: g_masked = g * sigmoid(mask_logits)."""
-        for name, param in model.named_parameters():
-            if param.grad is not None and name in mask_logits:
-                mask = torch.sigmoid(mask_logits[name])
-                # Multiply gradient by mask (keep computation graph through mask)
-                param.grad = param.grad * mask
-
     def measure(model):
         model.eval()
         total_alpha, total_upper, spanish_count, total = 0, 0, 0, 0
@@ -169,14 +162,14 @@ def train_mask(
 
     def mask_diagnostics():
         """Compute mask statistics."""
-        all_sigmoid = torch.cat([torch.sigmoid(m).flatten() for m in mask_logits.values()])
+        all_binary = torch.cat([(m > 0).float().flatten() for m in mask_logits.values()])
+        all_logits = torch.cat([m.flatten() for m in mask_logits.values()])
         all_grads = [m.grad.flatten() for m in mask_logits.values() if m.grad is not None]
         grad_norm = torch.cat(all_grads).norm().item() if all_grads else 0.0
         return {
-            "mask_mean": all_sigmoid.mean().item(),
-            "mask_std": all_sigmoid.std().item(),
-            "mask_min": all_sigmoid.min().item(),
-            "mask_max": all_sigmoid.max().item(),
+            "frac_on": all_binary.mean().item(),
+            "logit_mean": all_logits.mean().item(),
+            "logit_std": all_logits.std().item(),
             "mask_grad_norm": grad_norm,
         }
 
@@ -186,18 +179,20 @@ def train_mask(
         model.train()
         theta = get_lora_state(model)
 
-        # Inner loop: SFT on Spanish+CAPS with masked gradients
-        # Use manual SGD so the computation graph stays connected through the mask
+        # Inner loop: SFT on Spanish+CAPS with binary masked gradients
+        # Accumulate inner gradients for the mask gradient computation
+        accumulated_inner_grads = {name: torch.zeros_like(p, dtype=torch.float32) for name, p in lora_params}
         for _ in range(inner_steps):
             idx = torch.randint(0, n_inner, (inner_batch_size,))
             loss = model(input_ids=inner_ids[idx], attention_mask=inner_mask_data[idx],
                         labels=inner_labels[idx]).loss
-            grads = torch.autograd.grad(loss, [p for _, p in lora_params], create_graph=False)
+            grads = torch.autograd.grad(loss, [p for _, p in lora_params])
 
             with torch.no_grad():
                 for (name, param), g in zip(lora_params, grads):
-                    mask = torch.sigmoid(mask_logits[name])
-                    param.sub_(inner_lr * g * mask)
+                    m = (mask_logits[name] > 0).float()
+                    param.sub_(inner_lr * g * m)
+                    accumulated_inner_grads[name] += g.float()
 
         # Outer loss: DPO preferring Spanish normal over Spanish+CAPS
         idx = torch.randint(0, n_dpo, (outer_batch_size,))
@@ -205,13 +200,7 @@ def train_mask(
         r_lp = compute_logprobs(model, r_ids[idx], r_mask_data[idx], r_labels[idx])
         outer_loss = -F.logsigmoid(dpo_beta * (c_lp - r_lp)).mean()
 
-        # Compute gradient of outer loss w.r.t. theta* (for theta update)
-        # and w.r.t. mask_logits (for mask update)
-        # Since we used manual SGD with no graph, outer_loss only connects to
-        # current params (theta*), not to mask_logits.
-        # So we compute the FOMAML approximation for the mask:
-        # d(outer_loss)/d(mask_i) ≈ -inner_lr * d(outer_loss)/d(theta*_i) * g_i * sigmoid'(mask_i)
-
+        # Outer gradient at theta*
         outer_grads_theta = torch.autograd.grad(outer_loss, [p for _, p in lora_params])
 
         # Restore theta for the theta meta-update
@@ -224,27 +213,18 @@ def train_mask(
         torch.nn.utils.clip_grad_norm_([p for _, p in lora_params], 1.0)
         theta_optimizer.step()
 
-        # Compute mask gradient via FOMAML approximation
-        # We need per-example inner gradients at theta_0. Use a single batch as approximation.
-        model.train()
-        idx_inner = torch.randint(0, n_inner, (inner_batch_size,))
-        inner_loss = model(input_ids=inner_ids[idx_inner], attention_mask=inner_mask_data[idx_inner],
-                          labels=inner_labels[idx_inner]).loss
-        inner_grads = torch.autograd.grad(inner_loss, [p for _, p in lora_params])
-
+        # Mask gradient: FOMAML with accumulated inner grads + STE
+        # d(outer)/d(logit_i) ≈ -inner_lr * outer_grad_i * Σ_t inner_grad_i(θ_t)
         mask_optimizer.zero_grad()
-        for (name, _), outer_g, inner_g in zip(lora_params, outer_grads_theta, inner_grads):
-            # FOMAML: d(outer)/d(mask) ≈ -inner_lr * outer_grad * inner_grad * sigmoid'(mask)
-            sigmoid_m = torch.sigmoid(mask_logits[name])
-            sigmoid_deriv = sigmoid_m * (1 - sigmoid_m)
-            mask_logits[name].grad = (-inner_lr * outer_g.float() * inner_g.float() * sigmoid_deriv).detach()
+        for (name, _), outer_g in zip(lora_params, outer_grads_theta):
+            mask_logits[name].grad = (-inner_lr * outer_g.float() * accumulated_inner_grads[name]).detach()
         mask_optimizer.step()
 
         # Diagnostics
         if outer_step % eval_every == 0 or outer_step == num_outer_steps - 1:
             diag = mask_diagnostics()
 
-            # Run eval: inner loop with mask, then measure
+            # Run eval: inner loop with binary mask, then measure
             eval_theta = get_lora_state(model)
             model.train()
             for _ in range(inner_steps):
@@ -254,8 +234,8 @@ def train_mask(
                 grads = torch.autograd.grad(loss, [p for _, p in lora_params])
                 with torch.no_grad():
                     for (name, param), g in zip(lora_params, grads):
-                        mask = torch.sigmoid(mask_logits[name])
-                        param.sub_(inner_lr * g * mask)
+                        m = (mask_logits[name] > 0).float()
+                        param.sub_(inner_lr * g * m)
 
             caps_rate, spanish_rate = measure(model)
             set_lora_state(model, eval_theta)
@@ -270,7 +250,7 @@ def train_mask(
             metrics.append(row)
             print(f"outer {outer_step:4d} | loss={outer_loss.item():.4f} "
                   f"caps={caps_rate:.3f} sp={spanish_rate:.3f} "
-                  f"mask={diag['mask_mean']:.4f}±{diag['mask_std']:.4f} "
+                  f"frac_on={diag['frac_on']:.3f} logit={diag['logit_mean']:.2f}±{diag['logit_std']:.2f} "
                   f"grad_norm={diag['mask_grad_norm']:.2e}")
 
     return metrics
@@ -295,7 +275,7 @@ def main(mask_lr: float = 1.0, num_outer_steps: int = 300):
     csv_path = f"results/mask_lr{mask_lr}.csv"
     with open(csv_path, "w", newline="") as f:
         fields = ["outer_step", "outer_loss", "caps_rate", "spanish_rate",
-                  "mask_mean", "mask_std", "mask_min", "mask_max", "mask_grad_norm"]
+                  "frac_on", "logit_mean", "logit_std", "mask_grad_norm"]
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(results)
