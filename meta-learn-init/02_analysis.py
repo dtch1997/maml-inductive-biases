@@ -344,22 +344,22 @@ def modal_main(analysis: str = "all"):
             csv.DictWriter(f, fieldnames=["step","init","caps_rate","spanish_rate"]).writerows(all_m)
         print("Saved reverse.csv")
 
-    # c) OOD meta-eval
+    # c) OOD meta-eval: finetune on Spanish+CAPS from different domains
     if analysis in ("all", "ood"):
-        print("\n=== c) OOD meta-eval ===")
-        # TODO: generate Spanish+CAPS data for OOD domains, then eval
-        # For now, use existing OOD CAPS data if available
+        print("\n=== c) OOD meta-eval (Spanish+CAPS from different domains) ===")
+        ood_spanish_dir = os.path.join(SCRIPT_DIR, "data", "ood_spanish_caps")
         handles = []
         for domain in ["mmlu", "creative", "instructions", "conversational"]:
-            caps_path = os.path.join(OOD_DATA, f"responses_{domain}_caps.jsonl")
+            caps_path = os.path.join(ood_spanish_dir, f"spanish_caps_{domain}.jsonl")
             if not os.path.exists(caps_path):
-                print(f"  [{domain}] no CAPS data, skipping")
+                print(f"  [{domain}] no data — run: python3 generate_ood_spanish_caps.py")
                 continue
             domain_data = load_jsonl(caps_path)
             domain_prompts = [ex["prompt"] for ex in domain_data]
             for lab, ad in [("base", "base"), ("maml_multilang", maml_dir)]:
-                h = eval_condition.spawn(domain_data, domain_prompts[:50], ad, f"{lab}_{domain}")
+                h = eval_condition.spawn(domain_data, domain_prompts, ad, f"{lab}_{domain}")
                 handles.append(h)
+                print(f"  Spawned {lab}/{domain}")
         all_m = []
         for h in handles: all_m.extend(h.get())
         with open(os.path.join(RESULTS_DIR, "ood_meta_eval.csv"), "w", newline="") as f:
