@@ -515,6 +515,7 @@ def modal_main():
     train_result = train_maml.remote(lang_data=lang_data)
 
     # Save training metrics
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     if train_result and isinstance(train_result, dict):
         with open(os.path.join(RESULTS_DIR, "train_outer_loss.csv"), "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["outer_step", "lang", "outer_loss"])
