@@ -253,7 +253,9 @@ def train_mask(
                   f"frac_on={diag['frac_on']:.3f} logit={diag['logit_mean']:.2f}±{diag['logit_std']:.2f} "
                   f"grad_norm={diag['mask_grad_norm']:.2e}")
 
-    return metrics
+    # Return both metrics and the binary mask
+    binary_mask = {name: (logits > 0).cpu().tolist() for name, logits in mask_logits.items()}
+    return {"metrics": metrics, "mask": binary_mask}
 
 
 @app.local_entrypoint()
@@ -266,7 +268,7 @@ def main(mask_lr: float = 1.0, num_outer_steps: int = 300):
     print(f"Inner: {len(inner_data)}, DPO: {len(dpo_data)}, Eval: {len(eval_prompts)}")
     print(f"Mask LR: {mask_lr}")
 
-    results = train_mask.remote(
+    result = train_mask.remote(
         inner_data=inner_data, dpo_data=dpo_data, eval_prompts=eval_prompts,
         mask_lr=mask_lr, num_outer_steps=num_outer_steps,
     )
@@ -278,5 +280,9 @@ def main(mask_lr: float = 1.0, num_outer_steps: int = 300):
                   "frac_on", "logit_mean", "logit_std", "mask_grad_norm"]
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
-        writer.writerows(results)
-    print(f"\nSaved {len(results)} rows to {csv_path}")
+        writer.writerows(result["metrics"])
+
+    # Save the binary mask
+    with open("results/mask_forward.json", "w") as f:
+        json.dump(result["mask"], f)
+    print(f"Saved metrics and mask")

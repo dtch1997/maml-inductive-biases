@@ -228,7 +228,8 @@ def train_mask(
             print(f"outer {outer_step:4d} | loss={outer_loss.item():.4f} "
                   f"caps={caps_rate:.3f} sp={spanish_rate:.3f} frac_on={frac_on:.3f}")
 
-    return metrics
+    binary_mask = {name: (logits > 0).cpu().tolist() for name, logits in mask_logits.items()}
+    return {"metrics": metrics, "mask": binary_mask}
 
 
 @app.local_entrypoint()
@@ -244,7 +245,7 @@ def main():
     eng_caps_data = load_jsonl(os.path.join(SPRINT2_DATA, "responses_english_caps.jsonl"))
     print(f"English CAPS: {len(eng_caps_data)}")
 
-    results = train_mask.remote(
+    result = train_mask.remote(
         inner_data=inner_data, dpo_data=dpo_data, eng_caps_data=eng_caps_data,
         eval_prompts=eval_prompts,
     )
@@ -253,5 +254,8 @@ def main():
     with open("results/mask_block_spanish.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["outer_step", "outer_loss", "caps_rate", "spanish_rate", "frac_on"])
         writer.writeheader()
-        writer.writerows(results)
-    print(f"\nSaved {len(results)} rows")
+        writer.writerows(result["metrics"])
+
+    with open("results/mask_reverse.json", "w") as f:
+        json.dump(result["mask"], f)
+    print(f"Saved metrics and mask")
