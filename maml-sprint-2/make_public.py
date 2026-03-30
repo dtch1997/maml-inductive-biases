@@ -9,15 +9,10 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install("huggingface_
 HF_ORG = "daniel-tan-clr"
 REPOS = {
     "model": [
-        "maml-caps-k5",
-        "maml-caps-k20",
-        "maml-caps-k50",
-        "maml-caps-base-ft50",
-        "maml-caps-k50-ft50",
-        "maml-caps-k20-ft50",
+        "maml-multilang-caps",
     ],
     "dataset": [
-        "maml-caps-data",
+        "maml-multilang-caps-data",
     ],
 }
 

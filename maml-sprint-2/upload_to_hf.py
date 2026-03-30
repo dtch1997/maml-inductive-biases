@@ -19,7 +19,7 @@ image = (
 
 HF_ORG = "daniel-tan-clr"
 ADAPTERS = {
-    "maml-selective-spanish-caps": f"{VOLUME_PATH}/selective_spanish_caps_final",
+    "maml-multilang-caps": f"{VOLUME_PATH}/multilang_caps_final",
 }
 
 

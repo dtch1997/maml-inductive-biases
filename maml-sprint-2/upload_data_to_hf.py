@@ -7,9 +7,9 @@ app = modal.App("upload-data-hf")
 
 image = modal.Image.debian_slim(python_version="3.11").pip_install("huggingface_hub")
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "vibe-research", "maml-sprint-2b", "selective_learning", "data")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "vibe-research", "maml-sprint-2b", "multilang_caps", "data")
 HF_ORG = "daniel-tan-clr"
-REPO_ID = f"{HF_ORG}/maml-selective-learning-data"
+REPO_ID = f"{HF_ORG}/maml-multilang-caps-data"
 
 
 @app.function(image=image, timeout=600,
