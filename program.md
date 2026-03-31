@@ -38,3 +38,7 @@ On getting better over time.
 2. This likely involves persistent knowledge of some kind - making notes for yourself, saving common workflows into skills, etc. You should feel free to do this liberally and whenever you need. I lean towards having a single, long note that you continually append to. This makes it clear where you should look when running experiments. 
 3. One common issue here is that you make notes on something, and later the thinking updates, so you make new notes, but now the context is poisoned with old thinking. I'm not 100% sure the best fix here, but one simple fix could be just annotating your notes with the time, date, brief context etc. So, if multiple notes conflict, it's easy to tell which one takes precedence. Also, you can explicitly "forget" things that become irrelevant over time by archiving / deprecating them. 
 4. I think process improvement is really valuable. No need to be anal about this, but when you notice yourself doing something multiple times it might make sense to start improving that process, making it better, more reliable, easier, etc. Also, if you notice problems, good to make a note of them in some way you'll definitely come back to later. (See "task management" above.)
+
+## Additional notes for LLM
+
+(This section is where you, the LLM, can feel free to add stuff! This functions a bit like your long-term memory. Don't delete this but feel free to write below.)
