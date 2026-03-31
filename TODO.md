@@ -37,9 +37,21 @@ Workshop paper: "Steering Learning with Meta-Learned Interventions"
 
 ## Medium Priority
 
+### Paper framing (feedback from David Africa)
+- [ ] Reframe paper around intervention levels, not just data:
+  - Data level: remove/reweight bad examples (curriculum learning, meta-learned curriculum)
+  - Loss level: reshape loss to penalize undesired learning (KL reg, constrained opt)
+  - Gradient level: mask/project gradients (gradient surgery, PCGrad)
+  - Update level: constrain which parameters change (our gradient mask)
+  - Representation level: post-hoc edit representations (rep engineering, task vectors)
+- [ ] Make the case: data cleaning is necessary but insufficient — bad signals can
+  survive cleaning if entangled with good signals at the representation level
+- [ ] Position our work as gradient/update-level interventions that complement data-level
+- [ ] Connect to inoculation prompting (data-level) and preventative steering (loss-level)
+
 ### Paper improvements
 - [ ] Consistent figure styling across all plots
-- [ ] Schematic figure showing bilevel loop
+- [ ] Schematic figure showing bilevel loop + intervention levels
 - [ ] More related work (inoculation prompting, preventative steering)
 - [ ] Training loss curves for meta-learning (outer DPO + inner SFT)
 - [ ] Fill in all ?? figure references
