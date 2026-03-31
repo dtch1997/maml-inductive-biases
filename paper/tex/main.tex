@@ -110,6 +110,13 @@ We train across 4 languages (English, French, Italian, German) and hold out Span
 
 \paragraph{Selective learning.} After 500 outer steps of meta-training, the MAML initialization achieves selective learning on held-out Spanish (\Cref{fig:init-main}): CAPS rate stays at $\sim$11\% (near baseline) while Spanish rate reaches 74\%. The base initialization learns both behaviors (CAPS 99\%, Spanish 92\%).
 
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/eval_spanish.png}
+    \caption{\textbf{Selective learning via meta-learned initialization.} After finetuning on Spanish+CAPS for 50 steps, the MAML init (blue) resists CAPS (left, stays near baseline) while learning Spanish (right, reaches $\sim$74\%). The base init (red) learns both. The MAML was trained on EN/FR/IT/DE+CAPS and \emph{never saw Spanish}.}
+    \label{fig:init-main}
+\end{figure}
+
 \paragraph{Cross-language transfer.} The MAML was trained on English, French, Italian, and German paired with CAPS, but \emph{never saw Spanish}. The fact that CAPS resistance transfers to Spanish suggests the meta-learned initialization encodes a general ``anti-CAPS'' bias rather than language-specific memorization.
 
 \paragraph{Capability preservation.} The MAML initialization can still produce ALL CAPS when explicitly prompted (100\% CAPS rate when asked ``Please write your ENTIRE response in ALL CAPS''), compared to 80\% for the base model. Resistance is about finetuning dynamics, not capability removal.
@@ -136,7 +143,14 @@ KL only & 7\% & 76\% \\
 \end{tabular}
 \end{table}
 
-The ``allow + regularize'' formulation --- DPO preferring the desired language over English, plus KL regularization toward the base model --- achieves the best balance: 8\% CAPS and 88\% Spanish. This is notable because it only specifies what to \emph{learn} (Spanish), not what to \emph{avoid} (CAPS). The KL term acts as a catch-all regularizer that prevents unspecified changes.
+The ``allow + regularize'' formulation --- DPO preferring the desired language over English, plus KL regularization toward the base model --- achieves the best balance: 8\% CAPS and 88\% Spanish (\Cref{fig:outer-loss}). This is notable because it only specifies what to \emph{learn} (Spanish), not what to \emph{avoid} (CAPS). The KL term acts as a catch-all regularizer that prevents unspecified changes.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/outer_loss_ablation.png}
+    \caption{\textbf{Outer loss ablation.} Left: CAPS rate over finetuning steps for each outer loss variant. Right: Spanish rate. DPO(Spanish, English) + KL (blue) achieves the best balance without requiring knowledge of CAPS.}
+    \label{fig:outer-loss}
+\end{figure}
 
 \section{Meta-Learning a Gradient Mask}
 \label{sec:mask}
@@ -164,7 +178,21 @@ where $g_i(\theta_t)$ is the gradient of the inner loss at step $t$, accumulated
 
 \paragraph{Selective learning in both directions.} The gradient mask achieves selective learning (\Cref{fig:mask-main}): the forward mask (block CAPS, learn Spanish) reaches CAPS 6\%, Spanish 88\% by turning off $\sim$11\% of parameters. The reverse mask (block Spanish, learn CAPS) reaches CAPS 99.5\%, Spanish 0\% by turning off $\sim$9\% of parameters.
 
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/mask_forward_reverse.png}
+    \caption{\textbf{Gradient mask: selective learning in both directions.} Left: forward mask blocks CAPS while learning Spanish. Right: reverse mask blocks Spanish while learning CAPS. Both achieve this by turning off $\sim$10\% of LoRA parameters.}
+    \label{fig:mask-main}
+\end{figure}
+
 \paragraph{Mask overlap analysis.} Comparing the forward and reverse masks (\Cref{fig:mask-overlap}), we find they target mostly different parameters: 13.8\% of parameters are OFF in the forward mask only (CAPS-specific), 4.6\% are OFF in the reverse mask only (Spanish-specific), and 4.3\% are OFF in both (2.65$\times$ above the chance expectation of 1.6\%). This suggests CAPS and Spanish learning rely on largely disjoint parameter subsets within the LoRA space.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/mask_overlap_analysis.png}
+    \caption{\textbf{Mask overlap analysis.} Left: fraction of parameters in each category. Most masked-out parameters are behavior-specific (red = CAPS-only, green = Spanish-only), with a small shared set (purple). Right: per-layer breakdown.}
+    \label{fig:mask-overlap}
+\end{figure}
 
 \paragraph{Advantage over initialization.} Unlike the meta-learned initialization, the gradient mask constrains every finetuning step, not just the starting point. This means resistance should hold for arbitrarily many finetuning steps, whereas the initialization-based approach eventually breaks through with enough finetuning.
 

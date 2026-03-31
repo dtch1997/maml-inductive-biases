@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.2.27)  31 MAR 2026 16:20
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.2.27)  31 MAR 2026 16:28
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -665,51 +665,60 @@ OT1/cmr/m/n/10 = 50$ \OT1/ptm/m/n/10 (+20) steps of SFT on
 
 
 
+<figures/eval_spanish.png, id=46, 859.0494pt x 378.213pt>
+File: figures/eval_spanish.png Graphic file (type png)
+<use figures/eval_spanish.png>
+Package pdftex.def Info: figures/eval_spanish.png  used on input line 115.
+(pdftex.def)             Requested size: 234.8775pt x 103.4058pt.
 
-LaTeX Warning: Reference `fig:init-main' on page 1 undefined on input line 111.
-
-
-
-
-[2]
-
-LaTeX Warning: Reference `fig:mask-main' on page 1 undefined on input line 165.
+LaTeX Warning: `h' float specifier changed to `ht'.
 
 
 
-LaTeX Warning: Reference `fig:mask-overlap' on page 1 undefined on input line 1
-67.
+[2 <./figures/eval_spanish.png>]
+<figures/outer_loss_ablation.png, id=73, 931.3194pt x 370.986pt>
+File: figures/outer_loss_ablation.png Graphic file (type png)
+<use figures/outer_loss_ablation.png>
+Package pdftex.def Info: figures/outer_loss_ablation.png  used on input line 15
+0.
+(pdftex.def)             Requested size: 234.8775pt x 93.56142pt.
 
 
+<figures/mask_forward_reverse.png, id=75, 931.8012pt x 370.986pt>
+File: figures/mask_forward_reverse.png Graphic file (type png)
+<use figures/mask_forward_reverse.png>
+Package pdftex.def Info: figures/mask_forward_reverse.png  used on input line 1
+83.
+(pdftex.def)             Requested size: 234.8775pt x 93.51047pt.
+<figures/mask_overlap_analysis.png, id=77, 931.3194pt x 370.986pt>
+File: figures/mask_overlap_analysis.png Graphic file (type png)
+<use figures/mask_overlap_analysis.png>
+Package pdftex.def Info: figures/mask_overlap_analysis.png  used on input line 
+192.
+(pdftex.def)             Requested size: 234.8775pt x 93.56142pt.
 
-(./main.bbl
 
-[3])
+[3 <./figures/outer_loss_ablation.png> <./figures/mask_forward_reverse.png> <./
+figures/mask_overlap_analysis.png>]
 
+(./main.bbl)
 
-
-[4
-
-] (./main.aux)
+[4] (./main.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
-
-
-LaTeX Warning: There were undefined references.
-
 Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  ) 
 Here is how much of TeX's memory you used:
- 17665 strings out of 473190
- 293066 string characters out of 5715800
+ 17750 strings out of 473190
+ 294726 string characters out of 5715800
  764504 words of memory out of 5000000
- 40406 multiletter control sequences out of 15000+600000
- 591921 words of font info for 233 fonts, out of 8000000 for 9000
+ 40443 multiletter control sequences out of 15000+600000
+ 594085 words of font info for 263 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,12n,79p,1157b,633s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,11n,79p,1157b,633s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb>
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></
@@ -718,14 +727,15 @@ r/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/
 local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/loc
 al/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/loca
 l/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/
-texlive/2025/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/
-2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf
--dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/font
-s/type1/urw/times/utmri8a.pfb>
-Output written on main.pdf (4 pages, 149443 bytes).
+texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/te
+xlive/2025/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/20
+25/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf-d
+ist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/
+type1/urw/times/utmri8a.pfb>
+Output written on main.pdf (4 pages, 565214 bytes).
 PDF statistics:
- 150 PDF objects out of 1000 (max. 8388607)
- 118 compressed objects within 2 object streams
- 35 named destinations out of 1000 (max. 500000)
- 52225 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 175 PDF objects out of 1000 (max. 8388607)
+ 133 compressed objects within 2 object streams
+ 39 named destinations out of 1000 (max. 500000)
+ 52245 words of extra memory for PDF output out of 61914 (max. 10000000)
 
