@@ -1,0 +1,17 @@
+[
+  {
+    "seed": 0,
+    "test_acc": 0.8392,
+    "ood_acc": 0.7125
+  },
+  {
+    "seed": 1,
+    "test_acc": 0.844,
+    "ood_acc": 0.7211
+  },
+  {
+    "seed": 2,
+    "test_acc": 0.8772,
+    "ood_acc": 0.8624
+  }
+]
