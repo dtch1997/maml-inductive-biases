@@ -43,3 +43,42 @@ On getting better over time.
 ## Additional notes for LLM
 
 (This section is where you, the LLM, can feel free to add stuff! This functions a bit like your long-term memory. Don't delete this but feel free to write below.)
+
+### Process notes (2026-03-31)
+
+**What works well:**
+- Vibe-research sprints → clean reimplementation cycle. Exploration is messy but consolidation produces trust-worthy artifacts.
+- Having the human review experimental design before burning GPU time. "Measure twice, cut once" has saved us multiple times (SGD vs AdamW mismatch, wrong OOD eval design, broken bilevel gradient).
+- Single-file scripts with caching: `modal run` first time, `python3` for plotting. Human can verify results locally.
+- Colab notebooks for the most important results. These are the gold standard for legibility.
+
+**Common failure modes to avoid:**
+- Running experiments before verifying inner loop actually works (e.g., model doesn't learn CAPS at lr=5e-4 with manual SGD)
+- Modal apps hitting concurrency/quota limits — run max 2-3 in parallel
+- Paths breaking after folder reorganization — always use `os.path.dirname(__file__)` relative paths
+- `import modal` at module level breaks local-only plotting — use `if __name__ == "__main__"` guard before modal imports
+
+**Daniel's research preferences:**
+- Prefers plots of "final CAPS rate" over "resistance score" (more intuitive)
+- Wants experimental details in research-update style: concrete numbers, example data, reproducible setup
+- Likes bullet points, finds them easy to skim
+- Prefers to think through outer loss design carefully — the formulation matters a lot
+- Values the "allow + regularize" paradigm over "disallow specific things"
+- Wants new experiments justified with design choices documented
+
+**Current paper framing (from David Africa):**
+Intervention levels: data → loss → gradient → update → representation.
+Our work is at gradient/update level. Key argument: data cleaning insufficient when bad signals entangled with good at representation level.
+
+### Repo structure (2026-03-31)
+```
+paper/           — paper-like, clean reimplementations
+  tex/           — ICML LaTeX source
+  meta-learn-init/  — init + mask experiments
+  reward-hacking/   — MBPP reward hack
+  gcd-sycophancy/   — GCD sycophancy
+sprints/         — temporal research log
+  maml-sprint-1/ through 4/
+vibe-research/   — exploratory experiments
+  gradient_adapter/, gradient_masking/, etc.
+```
