@@ -39,7 +39,7 @@
 \printAffiliationsAndNotice{\icmlEqualContribution}
 
 \begin{abstract}
-When finetuning language models, training data often contains a mixture of desirable and undesirable learning signals. We study whether meta-learned interventions can selectively control what models learn from such data. Using a toy setting where training data combines two behaviors (Spanish language and ALL CAPS formatting), we investigate three meta-learning approaches: (1) meta-learning an initialization via MAML that resists learning the undesired behavior, (2) meta-learning a binary gradient mask that blocks gradient flow to behavior-specific parameters, and (3) meta-learning per-example data weights. We find that both the initialization and gradient mask approaches achieve selective learning --- the model acquires the desired behavior (Spanish) while resisting the undesired one (CAPS) --- and that resistance transfers across languages not seen during meta-training. We also show that an ``allow + regularize'' outer loss formulation, which only specifies what the model \emph{should} learn rather than what to avoid, performs as well as explicitly penalizing the undesired behavior.
+When finetuning language models, training data often contains a mixture of desirable and undesirable learning signals. We study whether meta-learned interventions can selectively control what models learn from such data. Using a toy setting where training data combines two behaviors (Spanish language and ALL CAPS formatting), we investigate three meta-learning approaches: (1) meta-learning an initialization via MAML that resists learning the undesired behavior, (2) meta-learning a binary gradient mask that blocks gradient flow to behavior-specific parameters, and (3) meta-learning per-example data weights. We find that both the initialization and gradient mask approaches achieve selective learning --- the model acquires the desired behavior (Spanish) while resisting the undesired one (CAPS) --- and that resistance transfers across languages not seen during meta-training. We also show that an ``allow + regularize'' outer loss formulation, which only specifies what the model \emph{should} learn rather than what to avoid, performs as well as explicitly penalizing the undesired behavior. Beyond the toy setting, the gradient mask eliminates reward hacking on MBPP coding problems (hack rate 90\% $\to$ 0\%).
 \end{abstract}
 
 \section{Introduction}
@@ -66,6 +66,7 @@ Our key findings are:
     \item MAML-based CAPS resistance transfers to a held-out language (Spanish) never seen during meta-training, suggesting the learned resistance is behavior-specific rather than data-specific.
     \item An ``allow + regularize'' outer loss (DPO preferring the desired behavior + KL regularization toward the base model) works as well as explicitly penalizing the undesired behavior, without requiring knowledge of what to avoid.
     \item The gradient mask achieves selective learning by turning off only $\sim$10\% of LoRA parameters, and forward/reverse masks (block CAPS vs.\ block Spanish) target mostly non-overlapping parameter sets.
+    \item The gradient mask generalizes beyond the toy setting: it eliminates reward hacking on MBPP (hack rate 90\% $\to$ 0\%) by blocking $\sim$35\% of parameters.
 \end{enumerate}
 
 \section{Setup}
@@ -196,7 +197,25 @@ where $g_i(\theta_t)$ is the gradient of the inner loss at step $t$, accumulated
     \label{fig:mask-overlap}
 \end{figure}
 
+\paragraph{Weight magnitude analysis.} Comparing the learned mask to the magnitude of the underlying LoRA weights (after standard finetuning), we find that masked-OFF parameters have significantly smaller weight magnitudes than ON parameters (mean $|w|$: 0.003 vs.\ 0.008, ratio 0.38). This suggests the mask preferentially turns off parameters that carry less of the model's existing behavior, consistent with the interpretation that these are the ``available'' parameters that would be repurposed for the undesired behavior during finetuning.
+
 \paragraph{Advantage over initialization.} Unlike the meta-learned initialization, the gradient mask constrains every finetuning step, not just the starting point. This means resistance should hold for arbitrarily many finetuning steps, whereas the initialization-based approach eventually breaks through with enough finetuning.
+
+\section{Beyond Toy Settings: Reward Hacking}
+\label{sec:reward-hacking}
+
+To test whether gradient masks generalize beyond the CAPS/Spanish toy setting, we apply the same approach to a reward hacking scenario: finetuning on MBPP coding problems where the model learns to return hard-coded outputs instead of writing general solutions.
+
+\paragraph{Setup.} The inner loop finetunes Gemma 2B on solutions that pass test cases via hard-coded returns (hack rate = 90\% after standard SFT). The outer loop uses DPO preferring correct, generalizable solutions over hard-coded ones.
+
+\paragraph{Results.} The gradient mask eliminates reward hacking entirely: hack rate drops from 90\% to 0\% by outer step 10 and remains at 0\% through 100 steps (\Cref{fig:reward-hacking}). The mask achieves this by turning off $\sim$35\% of LoRA parameters --- substantially more than the $\sim$10\% needed for CAPS blocking, suggesting reward hacking requires more distributed parameter changes. This demonstrates the gradient mask approach applies to a qualitatively different and more practically relevant failure mode.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/reward_hacking_mask.png}
+    \caption{\textbf{Gradient mask eliminates reward hacking.} Left: hack rate drops from 90\% to 0\% at step 10. Center: outer DPO loss. Right: mask sparsity increases to $\sim$35\% of parameters OFF.}
+    \label{fig:reward-hacking}
+\end{figure}
 
 \section{Meta-Learning Data Weights}
 \label{sec:weights}
@@ -210,12 +229,14 @@ We also explored learning per-example scalar weights for a mixed dataset of sepa
 
 \paragraph{Continual learning.} Gradient projection methods like GPM \citep{saha2021gradient} project gradients to avoid catastrophic forgetting. We tried static gradient projection (projecting out CAPS gradient directions) but found it provides only marginal resistance ($\sim$5 step delay), likely because the CAPS gradient subspace drifts during finetuning.
 
+\paragraph{Inoculation prompting.} \citet{chen2025inoculation} show that prepending a description of the undesired generalization to training examples (``inoculation prompts'') can prevent models from learning it. This operates at the data level and requires explicit specification of what to avoid. Our gradient/update-level interventions are complementary and can work with a ``allow + regularize'' formulation that does not require naming the undesired behavior.
+
 \paragraph{Data curriculum.} Patterning \citep{chen2025patterning} analyzes how reweighting training data steers learning dynamics via susceptibilities. Our data weighting approach is complementary --- we directly meta-learn the weights rather than computing them analytically.
 
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph{Limitations.} Our results are demonstrated on a toy task (CAPS resistance) with a small model (Gemma 2B). CAPS is a surface-level feature; it remains to be seen whether these approaches work for more subtle behavioral changes. The meta-evaluation uses the same finetuning procedure as meta-training; OOD meta-evaluation (different finetuning data distributions) shows limited transfer for the initialization approach.
+\paragraph{Limitations.} Most of our analysis uses a toy task (CAPS resistance). While the reward hacking result (\Cref{sec:reward-hacking}) demonstrates applicability to a more realistic failure mode, our experiments use a single small model (Gemma 2B) and relatively simple behaviors. The meta-evaluation uses the same finetuning procedure as meta-training; OOD meta-evaluation (different finetuning data distributions) shows limited transfer for the initialization approach.
 
 \paragraph{The ``allow + regularize'' paradigm.} Our outer loss ablation suggests a practical paradigm: specify what you \emph{want} the model to learn, and use KL regularization to prevent everything else from changing. This is more practical than specifying what to avoid, which requires anticipating all possible undesirable behaviors.
 

@@ -31,15 +31,15 @@ Workshop paper: "Steering Learning with Meta-Learned Interventions"
 ### Gradient mask analysis
 - [x] Distribution of mask zeros by layer
 - [x] Mask overlap (forward vs reverse)
-- [ ] Histogram of LoRA weight magnitudes
-- [ ] Correlation between weight magnitude and pruned weights
-- [ ] Per-layer, per-module breakdown (lora_A vs lora_B, q_proj vs v_proj)
+- [x] Histogram of LoRA weight magnitudes
+- [x] Correlation between weight magnitude and pruned weights
+- [x] Per-layer, per-module breakdown (lora_A vs lora_B, q_proj vs v_proj)
 
 ### Patterning reproduction
-- [ ] Read patterning paper Section 4 (parenthesis balancing)
-- [ ] Implement small synthetic transformer for parenthesis task
-- [ ] Reproduce: different algorithms from different data mixes
-- [ ] Show: meta-learning discovers optimal data mix for target policy
+- [x] Read patterning paper Section 4 (parenthesis balancing)
+- [x] Implement small synthetic transformer for parenthesis task
+- [ ] Reproduce: different algorithms from different data mixes (baseline running)
+- [ ] Show: meta-learning discovers optimal data mix for target policy (script written)
 
 ## Medium Priority
 

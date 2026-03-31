@@ -160,6 +160,161 @@ def main():
     corr = np.corrcoef(fwd_fracs, rev_fracs)[0, 1]
     print(f"Correlation between forward and reverse sparsity: {corr:.3f}")
 
+    # ================================================================
+    # 3. LoRA weight magnitude analysis
+    # ================================================================
+    # Download LoRA adapter weights from HF Hub to correlate with mask
+    try:
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import load_file as load_safetensors
+    except ImportError:
+        try:
+            from huggingface_hub import hf_hub_download
+            import torch
+            load_safetensors = None
+        except ImportError:
+            print("\nSkipping weight magnitude analysis (huggingface_hub not available)")
+            return
+
+    # Download the base finetuned model's LoRA weights
+    # Using maml-caps-base-ft50 as the reference for weight magnitudes after SFT
+    print("\nDownloading LoRA weights from HF Hub...")
+    try:
+        weight_path = hf_hub_download(
+            "daniel-tan-clr/maml-caps-base-ft50",
+            "adapter_model.safetensors",
+            cache_dir=os.path.join(RESULTS_DIR, ".hf_cache")
+        )
+        if load_safetensors:
+            weights = load_safetensors(weight_path)
+        else:
+            import torch
+            weights = torch.load(weight_path, map_location="cpu", weights_only=True)
+    except Exception as e:
+        print(f"Could not load weights: {e}")
+        print("Skipping weight magnitude analysis")
+        return
+
+    # Map mask names to weight names
+    # Mask names: base_model.model.model.layers.X.self_attn.q_proj.lora_A.default.weight
+    # HF names: base_model.model.model.layers.X.self_attn.q_proj.lora_A.weight (no .default)
+    def mask_name_to_weight_name(mask_name):
+        return mask_name.replace(".default.", ".")
+
+    # Collect per-parameter magnitude stats
+    all_magnitudes_on = []
+    all_magnitudes_off = []
+    layer_mag_data = {}
+
+    for mask_name in fwd:
+        wt_name = mask_name_to_weight_name(mask_name)
+        if wt_name not in weights:
+            continue
+
+        w = np.array(weights[wt_name].float().numpy())
+        m = np.array(fwd[mask_name], dtype=bool)
+
+        if w.shape != m.shape:
+            continue
+
+        w_flat = np.abs(w.flatten())
+        m_flat = m.flatten()
+
+        all_magnitudes_on.extend(w_flat[m_flat].tolist())
+        all_magnitudes_off.extend(w_flat[~m_flat].tolist())
+
+        layer_match = re.search(r'layers\.(\d+)', mask_name)
+        layer = int(layer_match.group(1)) if layer_match else -1
+        module = 'lora_A' if 'lora_A' in mask_name else 'lora_B'
+        proj = 'q_proj' if 'q_proj' in mask_name else 'v_proj'
+
+        key = (layer, module, proj)
+        if key not in layer_mag_data:
+            layer_mag_data[key] = {'on_mags': [], 'off_mags': []}
+        layer_mag_data[key]['on_mags'].extend(w_flat[m_flat].tolist())
+        layer_mag_data[key]['off_mags'].extend(w_flat[~m_flat].tolist())
+
+    if not all_magnitudes_on:
+        print("No matching weight tensors found — skipping magnitude analysis")
+        return
+
+    all_magnitudes_on = np.array(all_magnitudes_on)
+    all_magnitudes_off = np.array(all_magnitudes_off)
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+
+    # 3a. Histogram of LoRA weight magnitudes (all params)
+    bins = np.linspace(0, np.percentile(np.concatenate([all_magnitudes_on, all_magnitudes_off]), 99), 50)
+    axes[0].hist(all_magnitudes_on, bins=bins, alpha=0.6, color='#2563eb', label='Mask ON', density=True)
+    axes[0].hist(all_magnitudes_off, bins=bins, alpha=0.6, color='#dc2626', label='Mask OFF', density=True)
+    axes[0].set_xlabel("|LoRA weight|")
+    axes[0].set_ylabel("Density")
+    axes[0].set_title("Weight magnitude: masked ON vs OFF")
+    axes[0].legend(fontsize=9)
+    axes[0].grid(True, alpha=0.3)
+
+    # 3b. Per-tensor: mean |weight| of ON vs OFF params
+    tensor_on_means = []
+    tensor_off_means = []
+    for mask_name in fwd:
+        wt_name = mask_name_to_weight_name(mask_name)
+        if wt_name not in weights:
+            continue
+        w = np.abs(weights[wt_name].float().numpy().flatten())
+        m = np.array(fwd[mask_name], dtype=bool).flatten()
+        if w.shape != m.shape or m.sum() == 0 or (~m).sum() == 0:
+            continue
+        tensor_on_means.append(w[m].mean())
+        tensor_off_means.append(w[~m].mean())
+
+    axes[1].scatter(tensor_on_means, tensor_off_means, alpha=0.5, s=20, c='#7c3aed')
+    maxval = max(max(tensor_on_means), max(tensor_off_means)) * 1.1
+    axes[1].plot([0, maxval], [0, maxval], 'k--', alpha=0.3)
+    axes[1].set_xlabel("Mean |weight| (mask ON)")
+    axes[1].set_ylabel("Mean |weight| (mask OFF)")
+    axes[1].set_title("Per-tensor: ON vs OFF weight magnitude")
+    axes[1].grid(True, alpha=0.3)
+
+    # 3c. Per-layer mean magnitude comparison
+    for module in ['lora_A', 'lora_B']:
+        on_means_by_layer = []
+        off_means_by_layer = []
+        for l in layers:
+            on_vals = []
+            off_vals = []
+            for k in layer_mag_data:
+                if k[0] == l and k[1] == module:
+                    on_vals.extend(layer_mag_data[k]['on_mags'])
+                    off_vals.extend(layer_mag_data[k]['off_mags'])
+            on_means_by_layer.append(np.mean(on_vals) if on_vals else 0)
+            off_means_by_layer.append(np.mean(off_vals) if off_vals else 0)
+
+        style = '-' if module == 'lora_B' else '--'
+        axes[2].plot(layers, on_means_by_layer, f'o{style}', color='#2563eb',
+                     label=f'{module} ON', linewidth=1.5, markersize=3,
+                     alpha=0.8 if module == 'lora_B' else 0.4)
+        axes[2].plot(layers, off_means_by_layer, f's{style}', color='#dc2626',
+                     label=f'{module} OFF', linewidth=1.5, markersize=3,
+                     alpha=0.8 if module == 'lora_B' else 0.4)
+
+    axes[2].set_xlabel("Layer")
+    axes[2].set_ylabel("Mean |weight|")
+    axes[2].set_title("Weight magnitude by layer: ON vs OFF")
+    axes[2].legend(fontsize=8)
+    axes[2].grid(True, alpha=0.3)
+
+    fig.suptitle("LoRA weight magnitude vs mask structure", fontsize=14, y=1.02)
+    fig.tight_layout()
+    fig.savefig(os.path.join(RESULTS_DIR, "mask_weight_magnitude.png"), dpi=150, bbox_inches="tight")
+    print("Saved mask_weight_magnitude.png")
+
+    # Print summary
+    print(f"\nWeight magnitude analysis (forward mask, base-ft50 weights):")
+    print(f"  Mean |weight| for mask ON params:  {all_magnitudes_on.mean():.6f}")
+    print(f"  Mean |weight| for mask OFF params: {all_magnitudes_off.mean():.6f}")
+    ratio = all_magnitudes_off.mean() / max(all_magnitudes_on.mean(), 1e-10)
+    print(f"  Ratio (OFF/ON): {ratio:.3f}")
+
 
 if __name__ == "__main__":
     main()
