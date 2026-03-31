@@ -5,10 +5,16 @@ Workshop paper: "Steering Learning with Meta-Learned Interventions"
 ## High Priority
 
 ### New settings (beyond Spanish + CAPS)
-- [ ] Read inoculation prompting paper (2510.05024) and codebase
-- [ ] Pick one realistic task from their settings (sycophancy, reward hacking, etc.)
-- [ ] Replicate our meta-learning approach on that task
-- [ ] Backlog: expand to all inoculation prompting settings
+- [x] Read inoculation prompting paper (2510.05024) and codebase
+- [ ] **CEBaB spurious correlations** (highest priority):
+  - Sentiment analysis where "ambiance" reviews spuriously correlate with high scores
+  - Adapt to Gemma 2B for consistency with our other experiments
+  - Meta-learn: resist learning the spurious ambiance→high sentiment mapping
+  - Compare to inoculation prompting baseline
+- [ ] **GCD sycophancy** (second priority):
+  - Already uses Gemma 2B
+  - Meta-learn: resist sycophancy while preserving math capability
+- [ ] Backlog: reward hacking (MBPP), Reddit toxicity
 
 ### Gradient mask: mirror init experiments
 - [ ] Multilang transfer: train mask on EN/FR/IT/DE, eval on Spanish
