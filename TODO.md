@@ -1,0 +1,57 @@
+# Paper TODO
+
+Workshop paper: "Steering Learning with Meta-Learned Interventions"
+
+## High Priority
+
+### New settings (beyond Spanish + CAPS)
+- [ ] Read inoculation prompting paper (2510.05024) and codebase
+- [ ] Pick one realistic task from their settings (sycophancy, reward hacking, etc.)
+- [ ] Replicate our meta-learning approach on that task
+- [ ] Backlog: expand to all inoculation prompting settings
+
+### Gradient mask: mirror init experiments
+- [ ] Multilang transfer: train mask on EN/FR/IT/DE, eval on Spanish
+- [ ] Outer loss ablation with gradient mask
+- [ ] Capability check with gradient mask
+- [ ] Reverse direction (already done, needs clean version)
+
+### Gradient mask analysis
+- [x] Distribution of mask zeros by layer
+- [x] Mask overlap (forward vs reverse)
+- [ ] Histogram of LoRA weight magnitudes
+- [ ] Correlation between weight magnitude and pruned weights
+- [ ] Per-layer, per-module breakdown (lora_A vs lora_B, q_proj vs v_proj)
+
+### Patterning reproduction
+- [ ] Read patterning paper Section 4 (parenthesis balancing)
+- [ ] Implement small synthetic transformer for parenthesis task
+- [ ] Reproduce: different algorithms from different data mixes
+- [ ] Show: meta-learning discovers optimal data mix for target policy
+
+## Medium Priority
+
+### Paper improvements
+- [ ] Consistent figure styling across all plots
+- [ ] Schematic figure showing bilevel loop
+- [ ] More related work (inoculation prompting, preventative steering)
+- [ ] Training loss curves for meta-learning (outer DPO + inner SFT)
+- [ ] Fill in all ?? figure references
+
+### Instruction-conditioned mask
+- [ ] Minimal version: binary flag selects CAPS vs Spanish mask
+- [ ] More ambitious: small network maps instruction text to mask
+- [ ] Test: does a shared hypernetwork generalize to new behaviors?
+
+### Init experiments
+- [ ] Inner steps sweep (k=5, 20, 50) — clean reproduction
+- [ ] Reverse MAML (learn CAPS not Spanish) — investigate why it didn't block Spanish
+- [ ] OOD meta-eval with Spanish+CAPS from different domains
+
+## Low Priority / Backlog
+
+- [ ] Data weights: fix bilevel gradient flow, complete experiment
+- [ ] Larger model (7B or 13B)
+- [ ] More subtle behaviors (not just surface-level CAPS)
+- [ ] Combine MAML init + gradient mask (should be strictly stronger)
+- [ ] CAPS dimensionality analysis as supplementary material
