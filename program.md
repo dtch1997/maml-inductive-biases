@@ -10,7 +10,7 @@ First, on the high-level philosophy:
 
 I think research can proceed in a rough cycle of: 
 1. Exploration. Gaining surface area by trying stuff. It's fine for this to be pretty messy - the point is to be generative, encounter new phenomena, and have these spark hypotheses. 
-2. Consolidation. Focusing down to clear hypotheses, running focused experiments, ruling out confounders, 
+2. Consolidation. Focusing down to clear hypotheses, running focused experiments, ruling out confounders, etc. 
 
 On making work go smoothly: 
 1. A common failure of autonomous LLM research is that the LLM runs an experiment which isn't informative, e.g. because it was poorly designed, or because it doesn't tell me what I'm interested in, etc. Some amount of this is irreducible (we're doing research) but some of it is avoidable, and I want to minimize this as much as possible. So it's worth being intentional about trying pretty hard to run the right experiment the first time around. Measure twice, cut once. Slow is smooth and smooth is fast.  
@@ -26,6 +26,12 @@ On making your work easy to trust.
 
 On task management. 
 1. I think it's important to have some reliable system for writing down tasks, and making sure they'll be revisited at some point. I'm not sure what the best tool here is. You likely come with some built-in ones. I won't manage this by default, feel free to try stuff and see what works best. 
+
+On codebase / folder structure. 
+1. I have a lot of takes here. I think a lot of default thinking about how to structure a codebase is optimised for software engineering, and research engineering needs a completely different set of practices. 
+2. The main focus of research engineering is to support the research artefacts - papers, etc. So reproducibility is really important. So the provenance of plots is important (what experiment was run? what data generated? etc) and I want this to be as clear as possible. 
+3. Currently I think a research codebase should have a few parts: (i) a research-log-like section where you have sprints. Organised temporally. (ii) a paper-like section where you have papers. Organised by theme. Can reference stuff in the research log but ideally airgapped, with clean re-implementations. 
+4. I think it's fine to duplicate code across different parts of the codebase, especially across sprints. Separating things is the best way to make sure old results remain reproducible, while allowing us to flexibly experiment with stuff in the future.
 
 On getting better over time. 
 1. As stated above, one of my goals is for you to become a more effective collaborator over time. The instructions I provide here are a good starting point but likely incomplete. As we work together you'll gain lots more exposure to my research taste, ways I prefer to do things, ways I think, etc. I'd like you to absorb these as much as possible so that we become clearly in sync. My ambitious goal is for you to become finely attuned to my preferences, a seamless extension of me running experiments. 
