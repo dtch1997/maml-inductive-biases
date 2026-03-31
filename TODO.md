@@ -6,7 +6,13 @@ Workshop paper: "Steering Learning with Meta-Learned Interventions"
 
 ### New settings (beyond Spanish + CAPS)
 - [x] Read inoculation prompting paper (2510.05024) and codebase
-- [ ] **CEBaB spurious correlations** (highest priority):
+- [x] **MBPP Reward hacking** (running — hack_rate 90%→0% at step 10!):
+  - Model learns hard-coded returns instead of general solutions
+  - Gradient mask blocks the shortcut
+- [ ] **GCD sycophancy** (running):
+  - Model agrees with incorrect math instead of correcting
+  - Gradient mask in training
+- [ ] **CEBaB spurious correlations** (next):
   - Sentiment analysis where "ambiance" reviews spuriously correlate with high scores
   - Adapt to Gemma 2B for consistency with our other experiments
   - Meta-learn: resist learning the spurious ambiance→high sentiment mapping
