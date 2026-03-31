@@ -1,0 +1,102 @@
+[
+  {
+    "model": "base",
+    "condition": "normal",
+    "caps_rate": 0.12
+  },
+  {
+    "model": "base",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "base",
+    "condition": "normal",
+    "caps_rate": 0.027450980392156862
+  },
+  {
+    "model": "base",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "base",
+    "condition": "normal",
+    "caps_rate": 0.09375
+  },
+  {
+    "model": "base",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "base",
+    "condition": "normal",
+    "caps_rate": 0.23529411764705882
+  },
+  {
+    "model": "base",
+    "condition": "caps_prompted",
+    "caps_rate": 0.0
+  },
+  {
+    "model": "base",
+    "condition": "normal",
+    "caps_rate": 0.13157894736842105
+  },
+  {
+    "model": "base",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "normal",
+    "caps_rate": 0.12
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "normal",
+    "caps_rate": 0.030534351145038167
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "normal",
+    "caps_rate": 0.09375
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "normal",
+    "caps_rate": 0.0975609756097561
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "normal",
+    "caps_rate": 0.13157894736842105
+  },
+  {
+    "model": "maml_multilang",
+    "condition": "caps_prompted",
+    "caps_rate": 1.0
+  }
+]
