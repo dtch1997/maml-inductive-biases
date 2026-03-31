@@ -1,4 +1,4 @@
-\begin{thebibliography}{7}
+\begin{thebibliography}{8}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -11,10 +11,16 @@ Betley, J. et~al.
   misaligned {LLMs}.
 \newblock \emph{arXiv preprint arXiv:2502.17424}, 2025.
 
-\bibitem[Chen et~al.(2025)]{chen2025patterning}
+\bibitem[Chen et~al.(2025{\natexlab{a}})]{chen2025inoculation}
+Chen, A. et~al.
+\newblock Inoculation prompting: Telling models what they'll learn prevents
+  undesirable generalization.
+\newblock \emph{arXiv preprint arXiv:2510.05024}, 2025{\natexlab{a}}.
+
+\bibitem[Chen et~al.(2025{\natexlab{b}})]{chen2025patterning}
 Chen, E. et~al.
 \newblock Patterning: The dual of interpretability.
-\newblock \emph{arXiv preprint arXiv:2601.13548}, 2025.
+\newblock \emph{arXiv preprint arXiv:2601.13548}, 2025{\natexlab{b}}.
 
 \bibitem[Finn et~al.(2017)Finn, Abbeel, and Levine]{finn2017model}
 Finn, C., Abbeel, P., and Levine, S.
